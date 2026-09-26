@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>日本地図クイズ集 - GeoGuessr Japan</title>
+<style>
+  :root {
+    --bg: #0f172a;
+    --panel-bg: #131c31;
+    --panel-bg-2: #1b2740;
+    --ink: #eef2fb;
+    --sub-ink: #93a2c2;
+    --accent-2: #38bdf8;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: "Hiragino Sans", "Yu Gothic", "Noto Sans JP", -apple-system, BlinkMacSystemFont, sans-serif;
+    min-height: 100%;
+  }
+  body { display: flex; flex-direction: column; min-height: 100vh; }
+  header { padding: 48px 20px 20px; text-align: center; }
+  header h1 { margin: 0 0 10px; font-size: 2rem; letter-spacing: .02em; }
+  header p { margin: 0; color: var(--sub-ink); font-size: .95rem; }
+
+  main {
+    flex: 1;
+    max-width: 960px;
+    width: 100%;
+    margin: 0 auto;
+    padding: 24px 20px 40px;
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 20px;
+  }
+  a.game-card {
+    display: block;
+    background: var(--panel-bg);
+    border-radius: 18px;
+    padding: 24px 22px;
+    text-decoration: none;
+    color: var(--ink);
+    box-shadow: 0 4px 24px rgba(0,0,0,.25);
+    border: 1px solid transparent;
+    transition: transform .15s, border-color .15s, background .15s;
+  }
+  a.game-card:hover {
+    transform: translateY(-3px);
+    border-color: var(--accent-2);
+    background: var(--panel-bg-2);
+  }
+  a.game-card .icon { font-size: 2rem; display: block; margin-bottom: 10px; }
+  a.game-card h2 { margin: 0 0 8px; font-size: 1.15rem; }
+  a.game-card p { margin: 0; color: var(--sub-ink); font-size: .85rem; line-height: 1.55; }
+  a.game-card .badge {
+    display: inline-block; margin-left: 8px; font-size: .62rem; vertical-align: middle;
+    background: rgba(248,113,113,.18); color: #f87171; border: 1px solid rgba(248,113,113,.4);
+    border-radius: 999px; padding: 2px 8px; font-weight: 700; letter-spacing: .05em;
+  }
+
+  footer {
+    text-align: center;
+    padding: 16px;
+    font-size: .72rem;
+    color: var(--sub-ink);
+  }
+  footer a { color: var(--sub-ink); }
+
+  @media (max-width: 700px) {
+    main { grid-template-columns: 1fr; }
+    header h1 { font-size: 1.5rem; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>🗾 日本地図クイズ集</h1>
+  <p>日本の都道府県・市外局番・市区町村を、地図クリックで楽しく覚えられるミニゲーム集です。</p>
+</header>
+
+<main>
+  <a class="game-card" href="area-code-quiz.html">
+    <span class="icon">📞</span>
+    <h2>市外局番クイズ</h2>
+    <p>表示された市外局番から、その都道府県を地図上でクリックして当てるクイズです。</p>
+  </a>
+
+  <a class="game-card" href="municipality-quiz.html">
+    <span class="icon">🗾</span>
+    <h2>市区町村クイズ</h2>
+    <p>表示された市区町村名から、それが属する都道府県を地図上でクリックして当てるクイズです。</p>
+  </a>
+
+  <a class="game-card" href="pref-municipality-quiz.html">
+    <span class="icon">📍</span>
+    <h2>都道府県内市区町村位置クイズ</h2>
+    <p>都道府県を選んで、その中の市区町村がどこにあるかを地図クリックで当てるクイズです。近いほど高得点。</p>
+  </a>
+
+  <a class="game-card" href="areacode-region-quiz.html">
+    <span class="icon">📞</span>
+    <h2>市外局番エリアクイズ<span class="badge">上級</span></h2>
+    <p>都道府県単位ではなく、全国379の実際の市外局番エリアで分割した地図で当てる上級者向けクイズです。</p>
+  </a>
+</main>
+
+<footer>
+  地図データ: <a href="https://github.com/geolonia/japanese-prefectures" target="_blank" rel="noopener">Geolonia Japanese Prefectures SVG Map</a> ほかを利用・改変
+</footer>
+
+</body>
+</html>
