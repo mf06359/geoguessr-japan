@@ -48,8 +48,14 @@
     padding: 10px; display: flex; align-items: center; justify-content: center;
     box-shadow: 0 4px 24px rgba(0,0,0,.25); position: relative;
   }
-  .map-wrap { width: 100%; max-width: 720px; }
-  svg.japan-real-map { width: 100%; height: auto; display: block; overflow: visible; }
+  .map-wrap { width: 100%; max-width: 720px; position: relative; overflow: hidden; touch-action: none; border-radius: 8px; }
+  svg.japan-real-map { width: 100%; height: auto; display: block; transform-origin: 0 0; }
+
+  .zoom-controls { position: absolute; right: 10px; bottom: 10px; display: flex; flex-direction: column; gap: 6px; z-index: 5; }
+  .zoom-controls button {
+    flex: none; width: 38px; height: 38px; padding: 0; font-size: 1.15rem; line-height: 1;
+    background: rgba(27,39,64,.88);
+  }
 
   .prefecture { fill: var(--map-fill); stroke: var(--map-stroke); stroke-width: 1.2px; cursor: pointer; transition: fill .15s; }
   body.mode-select .prefecture:hover { fill: var(--map-hover); }
@@ -265,6 +271,11 @@
   </g>
   <g class="pin-layer" id="pinLayer"></g>
 </svg>
+      <div class="zoom-controls">
+        <button type="button" id="zoomInBtn" aria-label="拡大">＋</button>
+        <button type="button" id="zoomOutBtn" aria-label="縮小">－</button>
+        <button type="button" id="zoomResetBtn" aria-label="ズームをリセット">⟲</button>
+      </div>
     </div>
   </section>
 
@@ -406,6 +417,160 @@
     return a;
   }
 
+  // ---- pan & zoom (mouse wheel, pinch, drag, buttons) ----
+  function setupPanZoom(container, target) {
+    var scale = 1, tx = 0, ty = 0;
+    var MIN_SCALE = 1, MAX_SCALE = 6;
+    var pointers = {};
+    var dragStart = null;
+    var pinchStartDist = null;
+    var moved = 0;
+    var TRANSITION = 'transform 220ms cubic-bezier(.22,1,.36,1)';
+
+    // Animate discrete triggers (wheel tick, buttons, reset) so the zoom
+    // glides instead of jumping; drag/pinch turn this off so the map
+    // tracks the pointer 1:1 with no lag.
+    function animated(on) {
+      target.style.transition = on ? TRANSITION : 'none';
+    }
+
+    function apply() {
+      target.style.transform = 'translate(' + tx + 'px,' + ty + 'px) scale(' + scale + ')';
+    }
+
+    function clampPan(rect) {
+      var scaledW = rect.width * scale, scaledH = rect.height * scale;
+      var minTx = Math.min(0, rect.width - scaledW);
+      var minTy = Math.min(0, rect.height - scaledH);
+      if (tx > 0) tx = 0;
+      if (ty > 0) ty = 0;
+      if (tx < minTx) tx = minTx;
+      if (ty < minTy) ty = minTy;
+    }
+
+    function zoomAt(clientX, clientY, factor) {
+      var rect = container.getBoundingClientRect();
+      var cx = clientX - rect.left;
+      var cy = clientY - rect.top;
+      var newScale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, scale * factor));
+      var applied = newScale / scale;
+      tx = cx - (cx - tx) * applied;
+      ty = cy - (cy - ty) * applied;
+      scale = newScale;
+      if (scale <= MIN_SCALE) { scale = MIN_SCALE; tx = 0; ty = 0; }
+      clampPan(rect);
+      apply();
+    }
+
+    container.addEventListener('wheel', function (e) {
+      e.preventDefault();
+      // Scale the zoom step to the wheel/trackpad delta magnitude instead
+      // of a fixed jump per event, so trackpad scrolling feels continuous.
+      var dy = Math.max(-100, Math.min(100, e.deltaY));
+      animated(true);
+      zoomAt(e.clientX, e.clientY, Math.pow(1.0018, -dy));
+    }, { passive: false });
+
+    // Deliberately NOT using setPointerCapture: capturing a pointer on the
+    // container retargets the resulting synthetic "click" event's e.target
+    // to the container itself, which breaks closest('.prefecture') lookups
+    // in the answer-click handler. Track the gesture via window listeners
+    // instead so click targeting stays untouched.
+    var tracking = false;
+
+    function onPointerMove(e) {
+      if (!pointers[e.pointerId]) return;
+      pointers[e.pointerId] = { x: e.clientX, y: e.clientY };
+      var ids = Object.keys(pointers);
+      if (ids.length === 1 && dragStart) {
+        var dx = e.clientX - dragStart.x;
+        var dy = e.clientY - dragStart.y;
+        moved = Math.max(moved, Math.hypot(dx, dy));
+        if (scale > MIN_SCALE) {
+          tx = dragStart.tx + dx;
+          ty = dragStart.ty + dy;
+          clampPan(container.getBoundingClientRect());
+          apply();
+        }
+      } else if (ids.length === 2) {
+        var pts = ids.map(function (id) { return pointers[id]; });
+        var dist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+        var mid = { x: (pts[0].x + pts[1].x) / 2, y: (pts[0].y + pts[1].y) / 2 };
+        if (pinchStartDist) zoomAt(mid.x, mid.y, dist / pinchStartDist);
+        pinchStartDist = dist;
+        moved = 999;
+      }
+    }
+
+    function onPointerUp(e) {
+      delete pointers[e.pointerId];
+      var ids = Object.keys(pointers);
+      if (ids.length < 2) pinchStartDist = null;
+      if (ids.length === 0) {
+        dragStart = null;
+        window.removeEventListener('pointermove', onPointerMove);
+        window.removeEventListener('pointerup', onPointerUp);
+        window.removeEventListener('pointercancel', onPointerUp);
+        tracking = false;
+      }
+    }
+
+    container.addEventListener('pointerdown', function (e) {
+      if (e.target.closest && e.target.closest('button')) return;
+      if (e.button !== undefined && e.button > 0) return;
+      animated(false);
+      pointers[e.pointerId] = { x: e.clientX, y: e.clientY };
+      var ids = Object.keys(pointers);
+      moved = 0;
+      if (ids.length === 1) {
+        dragStart = { x: e.clientX, y: e.clientY, tx: tx, ty: ty };
+        pinchStartDist = null;
+      } else if (ids.length === 2) {
+        dragStart = null;
+        var pts = ids.map(function (id) { return pointers[id]; });
+        pinchStartDist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+      }
+      if (!tracking) {
+        tracking = true;
+        window.addEventListener('pointermove', onPointerMove);
+        window.addEventListener('pointerup', onPointerUp);
+        window.addEventListener('pointercancel', onPointerUp);
+      }
+    });
+
+    // suppress the answer click if this gesture was actually a drag/pinch
+    container.addEventListener('click', function (e) {
+      if (moved > 10) e.stopPropagation();
+    }, true);
+
+    var zoomInBtn = document.getElementById('zoomInBtn');
+    var zoomOutBtn = document.getElementById('zoomOutBtn');
+    var zoomResetBtn = document.getElementById('zoomResetBtn');
+    if (zoomInBtn) zoomInBtn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      animated(true);
+      var r = container.getBoundingClientRect();
+      zoomAt(r.left + r.width / 2, r.top + r.height / 2, 1.5);
+    });
+    if (zoomOutBtn) zoomOutBtn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      animated(true);
+      var r = container.getBoundingClientRect();
+      zoomAt(r.left + r.width / 2, r.top + r.height / 2, 1 / 1.5);
+    });
+    if (zoomResetBtn) zoomResetBtn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      animated(true);
+      scale = 1; tx = 0; ty = 0; apply();
+    });
+
+    container._resetZoom = function () {
+      animated(true);
+      scale = 1; tx = 0; ty = 0; apply();
+    };
+  }
+  setupPanZoom(mapWrap, svgEl);
+
   var SVGNS = 'http://www.w3.org/2000/svg';
   function addPin(x, y, kind) {
     var g = document.createElementNS(SVGNS, 'g');
@@ -460,6 +625,7 @@
     body.className = 'mode-select';
     svgEl.setAttribute('viewBox', ORIGINAL_VIEWBOX);
     svgEl.querySelectorAll('.prefecture').forEach(function (p) { p.style.display = ''; });
+    if (mapWrap._resetZoom) mapWrap._resetZoom();
     clearPins();
     panelSelect.style.display = '';
     panelPlaySign.style.display = 'none';
@@ -535,6 +701,7 @@
     stage = 'playing';
     body.className = 'mode-play';
     zoomToPrefecture(code);
+    if (mapWrap._resetZoom) mapWrap._resetZoom();
     clearPins();
 
     var pool = PREF_MUNI[code];

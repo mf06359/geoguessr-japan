@@ -52,16 +52,23 @@
     padding: 10px; display: flex; align-items: center; justify-content: center;
     box-shadow: 0 4px 24px rgba(0,0,0,.25); position: relative;
   }
-  .map-wrap { width: 100%; max-width: 720px; }
-  svg.japan-real-map { width: 100%; height: auto; display: block; overflow: visible; }
+  .map-wrap { width: 100%; max-width: 720px; position: relative; overflow: hidden; touch-action: none; border-radius: 8px; }
+  svg.japan-real-map { width: 100%; height: auto; display: block; transform-origin: 0 0; }
 
-  .prefecture { fill: var(--map-fill); stroke: var(--map-stroke); stroke-width: 1.2px; cursor: pointer; }
-  .prefecture:hover:not(.locked-map) { fill: var(--map-hover); }
-  .prefecture.correct { fill: var(--accent) !important; }
-  .prefecture.wrong { fill: var(--bad) !important; }
-  .prefecture.reveal { fill: var(--warn) !important; }
-  .prefecture.skipped-reveal { fill: var(--accent-2) !important; }
-  .locked-map .prefecture { cursor: default; }
+  .zoom-controls { position: absolute; right: 10px; bottom: 10px; display: flex; flex-direction: column; gap: 6px; z-index: 5; }
+  .zoom-controls button {
+    flex: none; width: 38px; height: 38px; padding: 0; font-size: 1.15rem; line-height: 1;
+    background: rgba(27,39,64,.88);
+  }
+
+  .prefecture, .muni-shape { fill: var(--map-fill); stroke: var(--map-stroke); stroke-width: 1.2px; cursor: pointer; }
+  .muni-shape { stroke-width: 1px; fill-rule: evenodd; }
+  .prefecture:hover:not(.locked-map), .muni-shape:hover:not(.locked-map) { fill: var(--map-hover); }
+  .prefecture.correct, .muni-shape.correct { fill: var(--accent) !important; }
+  .prefecture.wrong, .muni-shape.wrong { fill: var(--bad) !important; }
+  .prefecture.reveal, .muni-shape.reveal { fill: var(--warn) !important; }
+  .prefecture.skipped-reveal, .muni-shape.skipped-reveal { fill: var(--accent-2) !important; }
+  .locked-map .prefecture, .locked-map .muni-shape { cursor: default; }
 
   .pin-group { pointer-events: none; }
   .pin-drop { fill: #ef4444; stroke: #fff; stroke-width: 1.4; filter: drop-shadow(0 2px 4px rgba(0,0,0,.5)); }
@@ -166,19 +173,64 @@
   .start-card p { margin: 0 0 22px; color: var(--sub-ink); font-size: .85rem; line-height: 1.5; }
   .count-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
   .count-grid button { padding: 16px 8px; font-size: 1rem; }
+  .back-link {
+    display: inline-block; margin-top: 16px; font-size: .78rem; color: var(--sub-ink);
+    text-decoration: underline; cursor: pointer; background: none; border: none;
+  }
+  select {
+    width: 100%; font: inherit; font-size: .95rem; padding: 10px 10px; border-radius: 10px;
+    border: 1px solid #2a3a5c; background: var(--panel-bg-2); color: var(--ink);
+  }
+  .scope-choices { display: flex; flex-direction: column; gap: 10px; }
+  .scope-choices button { padding: 14px 10px; font-size: .95rem; }
 </style>
 </head>
 <body>
 
 <div class="start-overlay" id="startOverlay">
   <div class="start-card">
-    <h2>🗾 市区町村クイズ</h2>
-    <p>出題数を選んでください</p>
-    <div class="count-grid">
-      <button data-count="1">1問</button>
-      <button data-count="5">5問</button>
-      <button data-count="10">10問</button>
-      <button data-count="all" class="primary">全1739市区町村</button>
+    <div id="stepScope">
+      <h2>🗾 市区町村クイズ</h2>
+      <p>出題範囲を選んでください</p>
+      <div class="scope-choices">
+        <button type="button" class="primary" data-scope="all">🇯🇵 全国から出題</button>
+        <button type="button" data-scope="region">🗺️ 地方を選ぶ</button>
+        <button type="button" data-scope="pref">📍 都道府県を選ぶ</button>
+      </div>
+    </div>
+
+    <div id="stepRegion" style="display:none;">
+      <h2>地方を選択</h2>
+      <p>その地方の都道府県だけに絞った地図から、どの都道府県か当てます</p>
+      <div class="count-grid" id="regionGrid"></div>
+      <button type="button" class="back-link" data-back="stepScope">← 戻る</button>
+    </div>
+
+    <div id="stepPref" style="display:none;">
+      <h2>都道府県を選択</h2>
+      <p>選んだ都道府県内の市区町村を、地図上でピンポイントに当てます</p>
+      <select id="prefSelect2"></select>
+      <div class="controls" style="margin-top:14px;">
+        <button type="button" class="primary" id="prefConfirmBtn">決定</button>
+      </div>
+      <button type="button" class="back-link" data-back="stepScope">← 戻る</button>
+    </div>
+
+    <div id="stepLoading" style="display:none;">
+      <h2>読み込み中…</h2>
+      <p>市区町村境界データを取得しています</p>
+    </div>
+
+    <div id="stepCount" style="display:none;">
+      <h2 id="countTitle2">出題数を選んでください</h2>
+      <p id="countSubtitle2">&nbsp;</p>
+      <div class="count-grid" id="countGrid2">
+        <button type="button" data-count="1">1問</button>
+        <button type="button" data-count="5">5問</button>
+        <button type="button" data-count="10">10問</button>
+        <button type="button" data-count="all" class="primary" id="countAllBtn2">全部</button>
+      </div>
+      <button type="button" class="back-link" id="backFromCount">← 戻る</button>
     </div>
   </div>
 </div>
@@ -248,12 +300,18 @@
     <path class="prefecture" data-code="47" data-name="沖縄県" d="M43.99 891.47 L43.71 890.40 L42.60 890.76 L42.81 891.36 L43.99 891.47 Z M50.99 884.09 L51.97 883.53 L51.09 882.86 L50.99 884.09 Z M47.90 880.15 L48.56 879.80 L48.85 878.24 L48.12 877.71 L44.55 876.35 L43.54 875.28 L42.32 877.28 L42.57 878.75 L42.39 880.03 L41.72 879.55 L41.05 879.98 L40.18 879.68 L39.45 880.61 L40.08 881.65 L41.40 881.85 L41.54 880.97 L42.62 881.80 L44.34 882.21 L45.28 882.11 L46.28 882.76 L46.89 882.77 L47.90 880.15 Z M17.20 873.74 L15.71 873.82 L14.95 874.99 L15.85 875.26 L17.39 875.27 L18.29 874.22 L17.20 873.74 Z M60.50 873.08 L60.58 872.34 L61.43 871.38 L61.28 870.76 L62.30 869.74 L62.43 868.34 L61.69 868.05 L61.05 869.79 L60.28 872.49 L59.72 871.87 L58.73 872.77 L58.51 874.53 L57.49 874.44 L57.01 874.80 L56.13 874.57 L55.13 873.74 L54.70 874.99 L53.68 874.79 L53.92 875.86 L55.04 875.39 L55.80 876.25 L55.60 877.42 L54.73 878.18 L56.71 879.72 L57.48 879.50 L57.83 878.69 L58.96 879.09 L59.43 878.50 L59.71 876.31 L59.43 875.57 L59.47 874.23 L60.50 873.08 Z M75.08 865.35 L73.80 865.85 L73.88 866.76 L74.99 866.97 L75.60 866.46 L75.08 865.35 Z M96.17 860.07 L96.20 859.27 L95.54 858.75 L95.04 857.08 L94.59 856.85 L93.97 855.53 L94.13 856.46 L94.97 858.39 L94.32 858.75 L94.44 859.73 L93.60 860.51 L94.48 861.71 L93.52 862.21 L93.76 862.93 L95.40 863.93 L97.56 863.22 L100.18 863.35 L99.62 861.89 L98.58 861.68 L98.12 860.97 L96.88 860.68 L96.17 860.07 Z M89.90 860.01 L90.87 859.70 L89.72 858.52 L89.90 860.01 Z M90.45 857.57 L90.18 858.74 L90.93 859.79 L91.88 860.11 L92.42 859.70 L92.11 858.47 L90.45 857.57 Z M175.56 804.35 L175.13 807.15 L175.94 807.55 L177.68 806.58 L178.72 805.44 L179.76 805.06 L181.01 803.80 L180.72 802.72 L179.19 802.84 L178.98 802.06 L179.58 801.05 L179.93 799.67 L180.49 798.65 L180.98 798.07 L181.45 796.81 L182.13 796.40 L183.37 798.05 L183.92 797.33 L182.99 796.55 L182.48 795.67 L182.42 794.59 L180.91 793.16 L181.49 792.79 L181.41 792.64 L181.46 792.56 L182.35 791.72 L184.91 792.35 L184.99 791.43 L186.49 791.00 L186.71 789.57 L188.59 789.12 L188.01 787.97 L188.97 787.83 L189.88 788.46 L190.56 787.85 L191.54 787.65 L191.70 786.98 L191.16 786.13 L191.94 785.92 L192.21 784.55 L192.97 784.84 L194.89 784.51 L195.78 783.03 L196.28 782.61 L197.19 780.46 L197.56 780.26 L197.87 778.28 L197.68 777.05 L196.63 775.64 L195.69 774.81 L194.64 777.67 L192.97 779.67 L192.07 780.03 L192.05 780.96 L190.80 781.56 L190.13 782.53 L190.28 783.18 L189.52 783.93 L187.63 784.70 L186.41 783.90 L186.99 782.19 L185.40 781.39 L184.02 781.61 L182.72 781.55 L182.52 782.33 L183.02 782.83 L182.73 784.33 L183.40 785.60 L184.10 785.44 L186.22 786.45 L185.98 787.53 L184.39 788.66 L184.04 789.23 L182.27 789.53 L181.37 790.15 L181.21 790.82 L179.56 792.66 L179.11 792.35 L178.03 793.18 L177.09 792.41 L177.06 793.63 L177.91 795.68 L178.16 796.47 L178.54 798.44 L177.43 799.36 L176.83 799.35 L176.10 800.61 L175.75 800.47 L175.54 800.47 L175.96 801.27 L174.87 801.68 L174.40 802.36 L174.70 803.31 L175.56 804.35 Z M165.53 802.28 L164.96 801.28 L164.35 803.10 L164.66 803.74 L165.53 802.28 Z M144.80 796.81 L145.38 798.04 L146.03 798.50 L146.22 797.25 L146.85 796.32 L146.20 795.32 L145.23 794.46 L143.23 795.15 L143.23 796.03 L144.80 796.81 Z M180.27 780.08 L178.66 780.13 L178.67 781.34 L180.37 781.41 L180.99 780.70 L180.27 780.08 Z M296.17 816.16 L295.93 817.97 L296.61 818.40 L297.41 818.19 L297.96 816.74 L296.86 815.92 L296.17 816.16 Z M298.39 812.26 L299.05 813.61 L299.96 812.67 L298.39 812.26 Z M185.34 771.97 L184.67 771.12 L184.07 771.44 L184.13 772.63 L184.72 772.93 L185.34 771.97 Z M187.50 765.38 L186.65 765.61 L185.14 767.42 L185.59 767.84 L186.50 767.46 L186.83 766.19 L187.50 765.38 Z"/>
   </g>
   <g class="pin-layer" id="pinLayer"></g>
-</svg>    </div>
+</svg>
+      <div class="zoom-controls">
+        <button type="button" id="zoomInBtn" aria-label="拡大">＋</button>
+        <button type="button" id="zoomOutBtn" aria-label="縮小">－</button>
+        <button type="button" id="zoomResetBtn" aria-label="ズームをリセット">⟲</button>
+      </div>
+    </div>
   </section>
 
   <aside class="panel">
     <div class="card sign-card">
-      <div class="label">この市区町村がある都道府県は？</div>
+      <div class="label" id="signLabel">この市区町村がある都道府県は？</div>
       <div class="sign-board">
         <div class="city-name" id="cityName">---</div>
       </div>
@@ -294,6 +352,7 @@
 
 <footer>
   地図境界データ: <a href="https://github.com/smartnews-smri/japan-topography" target="_blank" rel="noopener">smartnews-smri/japan-topography</a>（国土数値情報を加工）/
+  市区町村境界データ: <a href="https://github.com/geolonia/japanese-admins" target="_blank" rel="noopener">geolonia/japanese-admins</a>（国土数値情報を加工）/
   市区町村名データ: <a href="https://github.com/geolonia/japanese-addresses" target="_blank" rel="noopener">geolonia/japanese-addresses</a> /
   役所位置データ: <a href="https://qiita.com/ELIXIR/items/5567cde8e16aa1d47996" target="_blank" rel="noopener">全国市区町村の city code および役所の緯度経度（Qiita: @ELIXIR）</a> を利用・加工
 </footer>
@@ -314,6 +373,7 @@
   });
 
   var mapWrap = document.getElementById('mapWrap');
+  var svgMap = mapWrap.querySelector('svg');
   var pinLayer = document.getElementById('pinLayer');
   var cityNameEl = document.getElementById('cityName');
   var hintPrefEl = document.getElementById('hintPref');
@@ -330,13 +390,49 @@
   var summaryMsgEl = document.getElementById('summaryMsg');
   var playAgainBtn = document.getElementById('playAgainBtn');
   var startOverlay = document.getElementById('startOverlay');
+  var signLabelEl = document.getElementById('signLabel');
+
+  var stepScope = document.getElementById('stepScope');
+  var stepRegion = document.getElementById('stepRegion');
+  var stepPref = document.getElementById('stepPref');
+  var stepLoading = document.getElementById('stepLoading');
+  var stepCount = document.getElementById('stepCount');
+  var regionGrid = document.getElementById('regionGrid');
+  var prefSelect2 = document.getElementById('prefSelect2');
+  var prefConfirmBtn = document.getElementById('prefConfirmBtn');
+  var countTitle2 = document.getElementById('countTitle2');
+  var countSubtitle2 = document.getElementById('countSubtitle2');
+  var countAllBtn2 = document.getElementById('countAllBtn2');
+  var backFromCount = document.getElementById('backFromCount');
+
+  var REGIONS = [
+    { name: '北海道', codes: ['1'] },
+    { name: '東北', codes: ['2','3','4','5','6','7'] },
+    { name: '関東', codes: ['8','9','10','11','12','13','14'] },
+    { name: '中部', codes: ['15','16','17','18','19','20','21','22','23'] },
+    { name: '近畿', codes: ['24','25','26','27','28','29','30'] },
+    { name: '中国', codes: ['31','32','33','34','35'] },
+    { name: '四国', codes: ['36','37','38','39'] },
+    { name: '九州・沖縄', codes: ['40','41','42','43','44','45','46','47'] }
+  ];
+  var PREF_CODES = Object.keys(PREF_NAME_BY_CODE).sort(function (a, b) { return parseInt(a, 10) - parseInt(b, 10); });
+
+  var scopeType = 'all';   // 'all' | 'region' | 'pref'
+  var scopeCodes = null;   // prefecture codes (unpadded strings) included in scope, null = all
+  var scopePrefCode = null;
+  var scopeRegionName = '';
+  var mode = 'pref-click'; // 'pref-click' | 'muni-click'
+  var muniData = null;     // fetched boundary data for scopePrefCode when mode === 'muni-click'
+  var prefecturesGroup = mapWrap.querySelector('g.prefectures');
+  var muniShapesGroup = null;
+  var ORIGINAL_VIEWBOX = svgMap.getAttribute('viewBox');
 
   var queue = [];
   var idx = 0;
   var score = 0;
   var answered = 0;
   var locked = false;
-  var current = null; // {code, prefName, cityName, gun, x, y, validCodes}
+  var current = null; // {code, prefName, cityName, gun, x, y, validCodes} or {code, cityName} in muni-click mode
 
   function shuffle(arr) {
     var a = arr.slice();
@@ -346,6 +442,160 @@
     }
     return a;
   }
+
+  // ---- pan & zoom (mouse wheel, pinch, drag, buttons) ----
+  function setupPanZoom(container, target) {
+    var scale = 1, tx = 0, ty = 0;
+    var MIN_SCALE = 1, MAX_SCALE = 6;
+    var pointers = {};
+    var dragStart = null;
+    var pinchStartDist = null;
+    var moved = 0;
+    var TRANSITION = 'transform 220ms cubic-bezier(.22,1,.36,1)';
+
+    // Animate discrete triggers (wheel tick, buttons, reset) so the zoom
+    // glides instead of jumping; drag/pinch turn this off so the map
+    // tracks the pointer 1:1 with no lag.
+    function animated(on) {
+      target.style.transition = on ? TRANSITION : 'none';
+    }
+
+    function apply() {
+      target.style.transform = 'translate(' + tx + 'px,' + ty + 'px) scale(' + scale + ')';
+    }
+
+    function clampPan(rect) {
+      var scaledW = rect.width * scale, scaledH = rect.height * scale;
+      var minTx = Math.min(0, rect.width - scaledW);
+      var minTy = Math.min(0, rect.height - scaledH);
+      if (tx > 0) tx = 0;
+      if (ty > 0) ty = 0;
+      if (tx < minTx) tx = minTx;
+      if (ty < minTy) ty = minTy;
+    }
+
+    function zoomAt(clientX, clientY, factor) {
+      var rect = container.getBoundingClientRect();
+      var cx = clientX - rect.left;
+      var cy = clientY - rect.top;
+      var newScale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, scale * factor));
+      var applied = newScale / scale;
+      tx = cx - (cx - tx) * applied;
+      ty = cy - (cy - ty) * applied;
+      scale = newScale;
+      if (scale <= MIN_SCALE) { scale = MIN_SCALE; tx = 0; ty = 0; }
+      clampPan(rect);
+      apply();
+    }
+
+    container.addEventListener('wheel', function (e) {
+      e.preventDefault();
+      // Scale the zoom step to the wheel/trackpad delta magnitude instead
+      // of a fixed jump per event, so trackpad scrolling feels continuous.
+      var dy = Math.max(-100, Math.min(100, e.deltaY));
+      animated(true);
+      zoomAt(e.clientX, e.clientY, Math.pow(1.0018, -dy));
+    }, { passive: false });
+
+    // Deliberately NOT using setPointerCapture: capturing a pointer on the
+    // container retargets the resulting synthetic "click" event's e.target
+    // to the container itself, which breaks closest('.prefecture') lookups
+    // in the answer-click handler. Track the gesture via window listeners
+    // instead so click targeting stays untouched.
+    var tracking = false;
+
+    function onPointerMove(e) {
+      if (!pointers[e.pointerId]) return;
+      pointers[e.pointerId] = { x: e.clientX, y: e.clientY };
+      var ids = Object.keys(pointers);
+      if (ids.length === 1 && dragStart) {
+        var dx = e.clientX - dragStart.x;
+        var dy = e.clientY - dragStart.y;
+        moved = Math.max(moved, Math.hypot(dx, dy));
+        if (scale > MIN_SCALE) {
+          tx = dragStart.tx + dx;
+          ty = dragStart.ty + dy;
+          clampPan(container.getBoundingClientRect());
+          apply();
+        }
+      } else if (ids.length === 2) {
+        var pts = ids.map(function (id) { return pointers[id]; });
+        var dist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+        var mid = { x: (pts[0].x + pts[1].x) / 2, y: (pts[0].y + pts[1].y) / 2 };
+        if (pinchStartDist) zoomAt(mid.x, mid.y, dist / pinchStartDist);
+        pinchStartDist = dist;
+        moved = 999;
+      }
+    }
+
+    function onPointerUp(e) {
+      delete pointers[e.pointerId];
+      var ids = Object.keys(pointers);
+      if (ids.length < 2) pinchStartDist = null;
+      if (ids.length === 0) {
+        dragStart = null;
+        window.removeEventListener('pointermove', onPointerMove);
+        window.removeEventListener('pointerup', onPointerUp);
+        window.removeEventListener('pointercancel', onPointerUp);
+        tracking = false;
+      }
+    }
+
+    container.addEventListener('pointerdown', function (e) {
+      if (e.target.closest && e.target.closest('button')) return;
+      if (e.button !== undefined && e.button > 0) return;
+      animated(false);
+      pointers[e.pointerId] = { x: e.clientX, y: e.clientY };
+      var ids = Object.keys(pointers);
+      moved = 0;
+      if (ids.length === 1) {
+        dragStart = { x: e.clientX, y: e.clientY, tx: tx, ty: ty };
+        pinchStartDist = null;
+      } else if (ids.length === 2) {
+        dragStart = null;
+        var pts = ids.map(function (id) { return pointers[id]; });
+        pinchStartDist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+      }
+      if (!tracking) {
+        tracking = true;
+        window.addEventListener('pointermove', onPointerMove);
+        window.addEventListener('pointerup', onPointerUp);
+        window.addEventListener('pointercancel', onPointerUp);
+      }
+    });
+
+    // suppress the answer click if this gesture was actually a drag/pinch
+    container.addEventListener('click', function (e) {
+      if (moved > 10) e.stopPropagation();
+    }, true);
+
+    var zoomInBtn = document.getElementById('zoomInBtn');
+    var zoomOutBtn = document.getElementById('zoomOutBtn');
+    var zoomResetBtn = document.getElementById('zoomResetBtn');
+    if (zoomInBtn) zoomInBtn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      animated(true);
+      var r = container.getBoundingClientRect();
+      zoomAt(r.left + r.width / 2, r.top + r.height / 2, 1.5);
+    });
+    if (zoomOutBtn) zoomOutBtn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      animated(true);
+      var r = container.getBoundingClientRect();
+      zoomAt(r.left + r.width / 2, r.top + r.height / 2, 1 / 1.5);
+    });
+    if (zoomResetBtn) zoomResetBtn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      animated(true);
+      scale = 1; tx = 0; ty = 0; apply();
+    });
+
+    container._resetZoom = function () {
+      animated(true);
+      scale = 1; tx = 0; ty = 0; apply();
+    };
+  }
+  setupPanZoom(mapWrap, svgMap);
 
   var SVGNS = 'http://www.w3.org/2000/svg';
   function showPin(x, y) {
@@ -380,7 +630,7 @@
   }
 
   function clearMarks() {
-    var els = mapWrap.querySelectorAll('.prefecture.correct, .prefecture.wrong, .prefecture.reveal, .prefecture.skipped-reveal');
+    var els = mapWrap.querySelectorAll('.correct, .wrong, .reveal, .skipped-reveal');
     for (var i = 0; i < els.length; i++) {
       els[i].classList.remove('correct', 'wrong', 'reveal', 'skipped-reveal');
     }
@@ -399,12 +649,175 @@
     progressFillEl.style.width = (idx / queue.length * 100) + '%';
   }
 
+  // ---- start wizard: scope (all / region / pref) -> count -> play ----
+  function showWizardStep(step) {
+    [stepScope, stepRegion, stepPref, stepLoading, stepCount].forEach(function (el) {
+      el.style.display = (el === step) ? '' : 'none';
+    });
+  }
+
   function showStartOverlay() {
     startOverlay.classList.remove('hidden');
+    showWizardStep(stepScope);
+  }
+
+  regionGrid.innerHTML = '';
+  REGIONS.forEach(function (region) {
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    var total = MUNI.filter(function (m) { return region.codes.indexOf(m[0]) !== -1; }).length;
+    btn.textContent = region.name + '（' + total + '）';
+    btn.addEventListener('click', function () {
+      scopeType = 'region';
+      scopeCodes = region.codes;
+      scopeRegionName = region.name;
+      mode = 'pref-click';
+      goToCountStep();
+    });
+    regionGrid.appendChild(btn);
+  });
+
+  PREF_CODES.forEach(function (code) {
+    var opt = document.createElement('option');
+    opt.value = code;
+    opt.textContent = PREF_NAME_BY_CODE[code];
+    prefSelect2.appendChild(opt);
+  });
+
+  Array.prototype.forEach.call(startOverlay.querySelectorAll('button[data-scope]'), function (btn) {
+    btn.addEventListener('click', function () {
+      var scope = btn.getAttribute('data-scope');
+      if (scope === 'all') {
+        scopeType = 'all';
+        scopeCodes = null;
+        mode = 'pref-click';
+        goToCountStep();
+      } else if (scope === 'region') {
+        showWizardStep(stepRegion);
+      } else if (scope === 'pref') {
+        showWizardStep(stepPref);
+      }
+    });
+  });
+
+  Array.prototype.forEach.call(startOverlay.querySelectorAll('button[data-back]'), function (btn) {
+    btn.addEventListener('click', function () {
+      showWizardStep(document.getElementById(btn.getAttribute('data-back')));
+    });
+  });
+
+  prefConfirmBtn.addEventListener('click', function () {
+    var code = prefSelect2.value;
+    if (!code) return;
+    scopeType = 'pref';
+    scopePrefCode = code;
+    mode = 'muni-click';
+    showWizardStep(stepLoading);
+    var padded = code.length === 1 ? '0' + code : code;
+    fetch('muni-boundaries/' + padded + '.json')
+      .then(function (res) {
+        if (!res.ok) throw new Error('load failed');
+        return res.json();
+      })
+      .then(function (data) {
+        muniData = data;
+        goToCountStep();
+      })
+      .catch(function () {
+        stepLoading.querySelector('p').textContent = '読み込みに失敗しました。もう一度お試しください。';
+        setTimeout(function () { showWizardStep(stepPref); }, 1800);
+      });
+  });
+
+  function goToCountStep() {
+    var total;
+    if (mode === 'muni-click') {
+      countTitle2.textContent = muniData.name + 'を出題';
+      total = muniData.munis.length;
+    } else if (scopeType === 'region') {
+      countTitle2.textContent = scopeRegionName + '地方から出題';
+      total = MUNI.filter(function (m) { return scopeCodes.indexOf(m[0]) !== -1; }).length;
+    } else {
+      countTitle2.textContent = '全国から出題';
+      total = MUNI.length;
+    }
+    countSubtitle2.textContent = '出題数を選んでください（全' + total + '市区町村）';
+    countAllBtn2.textContent = '全' + total + '市区町村';
+    showWizardStep(stepCount);
+  }
+
+  backFromCount.addEventListener('click', function () {
+    if (mode === 'muni-click') showWizardStep(stepPref);
+    else if (scopeType === 'region') showWizardStep(stepRegion);
+    else showWizardStep(stepScope);
+  });
+
+  Array.prototype.forEach.call(startOverlay.querySelectorAll('button[data-count]'), function (btn) {
+    btn.addEventListener('click', function () {
+      var raw = btn.getAttribute('data-count');
+      var count = raw === 'all' ? 'all' : parseInt(raw, 10);
+      startOverlay.classList.add('hidden');
+      prepareMapForScope();
+      newGame(count);
+    });
+  });
+
+  // ---- map setup per scope/mode ----
+  function prepareMapForScope() {
+    if (mode === 'muni-click') {
+      prefecturesGroup.style.display = 'none';
+      if (muniShapesGroup) muniShapesGroup.remove();
+      muniShapesGroup = document.createElementNS(SVGNS, 'g');
+      muniShapesGroup.setAttribute('class', 'muni-shapes');
+      muniData.munis.forEach(function (m) {
+        var path = document.createElementNS(SVGNS, 'path');
+        path.setAttribute('class', 'muni-shape');
+        path.setAttribute('data-code', m.code);
+        path.setAttribute('data-name', m.name);
+        path.setAttribute('d', m.d);
+        muniShapesGroup.appendChild(path);
+      });
+      svgMap.insertBefore(muniShapesGroup, pinLayer);
+      svgMap.setAttribute('viewBox', muniData.viewBox);
+      signLabelEl.textContent = 'この市区町村はどこ？';
+    } else {
+      prefecturesGroup.style.display = '';
+      if (muniShapesGroup) { muniShapesGroup.remove(); muniShapesGroup = null; }
+      var allPaths = prefecturesGroup.querySelectorAll('.prefecture');
+      if (scopeType === 'region') {
+        var minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        Array.prototype.forEach.call(allPaths, function (p) {
+          var inScope = scopeCodes.indexOf(p.getAttribute('data-code')) !== -1;
+          p.style.display = inScope ? '' : 'none';
+          if (inScope) {
+            var bbox = p.getBBox();
+            minX = Math.min(minX, bbox.x);
+            minY = Math.min(minY, bbox.y);
+            maxX = Math.max(maxX, bbox.x + bbox.width);
+            maxY = Math.max(maxY, bbox.y + bbox.height);
+          }
+        });
+        var pad = Math.max(maxX - minX, maxY - minY) * 0.08 + 4;
+        svgMap.setAttribute('viewBox', [minX - pad, minY - pad, (maxX - minX) + pad * 2, (maxY - minY) + pad * 2].join(' '));
+      } else {
+        Array.prototype.forEach.call(allPaths, function (p) { p.style.display = ''; });
+        svgMap.setAttribute('viewBox', ORIGINAL_VIEWBOX);
+      }
+      signLabelEl.textContent = 'この市区町村がある都道府県は？';
+    }
+    if (mapWrap._resetZoom) mapWrap._resetZoom();
   }
 
   function newGame(count) {
-    var shuffled = shuffle(MUNI);
+    var pool;
+    if (mode === 'muni-click') {
+      pool = muniData.munis;
+    } else if (scopeType === 'region') {
+      pool = MUNI.filter(function (m) { return scopeCodes.indexOf(m[0]) !== -1; });
+    } else {
+      pool = MUNI;
+    }
+    var shuffled = shuffle(pool);
     queue = (count === 'all' || !count) ? shuffled : shuffled.slice(0, Math.min(count, shuffled.length));
     idx = 0;
     score = 0;
@@ -424,18 +837,25 @@
     }
     var m = queue[idx];
     idx++;
-    current = {
-      code: m[0],
-      prefName: m[1],
-      cityName: m[2],
-      gun: m[3] || '',
-      x: m[4],
-      y: m[5],
-      validCodes: nameToCodes[m[2]]
-    };
-    cityNameEl.textContent = current.cityName;
-    hintPrefEl.textContent = current.gun ? ('(' + current.gun + ')') : ' ';
-    feedbackEl.textContent = '地図から都道府県をクリックして解答してね';
+    if (mode === 'muni-click') {
+      current = { code: m.code, cityName: m.name };
+      cityNameEl.textContent = current.cityName;
+      hintPrefEl.textContent = muniData.name;
+      feedbackEl.textContent = '地図から市区町村をクリックして解答してね';
+    } else {
+      current = {
+        code: m[0],
+        prefName: m[1],
+        cityName: m[2],
+        gun: m[3] || '',
+        x: m[4],
+        y: m[5],
+        validCodes: nameToCodes[m[2]]
+      };
+      cityNameEl.textContent = current.cityName;
+      hintPrefEl.textContent = current.gun ? ('(' + current.gun + ')') : ' ';
+      feedbackEl.textContent = '地図から都道府県をクリックして解答してね';
+    }
     feedbackEl.className = 'feedback idle';
     updateStats();
     setLocked(false);
@@ -453,7 +873,7 @@
     else if (pct >= 80) msg = 'お見事！かなり詳しいですね。';
     else if (pct >= 50) msg = 'まずまず！もう一周してみよう。';
     else msg = 'まだまだ伸びしろあり！復習してみよう。';
-    summaryMsgEl.textContent = msg + '（全国' + queue.length + '市区町村中 ' + totalAttempted + '問に解答）';
+    summaryMsgEl.textContent = msg + '（' + queue.length + '市区町村中 ' + totalAttempted + '問に解答）';
     cityNameEl.textContent = '✓';
     hintPrefEl.textContent = 'クイズ終了';
     skipBtn.disabled = true;
@@ -465,6 +885,30 @@
     if (locked || !current) return;
     setLocked(true);
     answered++;
+
+    if (mode === 'muni-click') {
+      var isCorrectM = selectedCode === current.code;
+      var selElM = mapWrap.querySelector('.muni-shape[data-code="' + selectedCode + '"]');
+      if (isCorrectM) {
+        score++;
+        if (selElM) selElM.classList.add('correct');
+        feedbackEl.textContent = '✅ 正解！ ' + current.cityName + ' はここです。';
+        feedbackEl.className = 'feedback ok';
+      } else {
+        if (selElM) selElM.classList.add('wrong');
+        var correctElM = mapWrap.querySelector('.muni-shape[data-code="' + current.code + '"]');
+        if (correctElM) correctElM.classList.add('reveal');
+        var wrongNameM = (selElM && selElM.getAttribute('data-name')) || '不明';
+        feedbackEl.textContent = '❌ 不正解… ' + current.cityName + ' はこちらでした。(選択: ' + wrongNameM + ')';
+        feedbackEl.className = 'feedback bad';
+      }
+      updateStats();
+      setTimeout(function () {
+        clearMarks();
+        nextQuestion();
+      }, 1900);
+      return;
+    }
 
     var isCorrect = current.validCodes.indexOf(selectedCode) !== -1;
     var selEl = mapWrap.querySelector('.prefecture[data-code="' + selectedCode + '"]');
@@ -497,6 +941,20 @@
   function handleSkip() {
     if (locked || !current) return;
     setLocked(true);
+
+    if (mode === 'muni-click') {
+      var correctElM = mapWrap.querySelector('.muni-shape[data-code="' + current.code + '"]');
+      if (correctElM) correctElM.classList.add('skipped-reveal');
+      feedbackEl.textContent = '⏭️ スキップ： ' + current.cityName + ' はこちらでした。';
+      feedbackEl.className = 'feedback skip';
+      updateStats();
+      setTimeout(function () {
+        clearMarks();
+        nextQuestion();
+      }, 1600);
+      return;
+    }
+
     current.validCodes.forEach(function (c) {
       var el = mapWrap.querySelector('.prefecture[data-code="' + c + '"]');
       if (el) el.classList.add('skipped-reveal');
@@ -513,7 +971,7 @@
   }
 
   mapWrap.addEventListener('click', function (e) {
-    var target = e.target.closest ? e.target.closest('.prefecture') : null;
+    var target = e.target.closest ? e.target.closest('.prefecture, .muni-shape') : null;
     if (!target) return;
     var code = target.getAttribute('data-code');
     if (code) handleAnswer(code);
@@ -527,16 +985,6 @@
     setLocked(true);
     showSummary();
   });
-
-  var countButtons = startOverlay.querySelectorAll('button[data-count]');
-  for (var ci = 0; ci < countButtons.length; ci++) {
-    countButtons[ci].addEventListener('click', function () {
-      var raw = this.getAttribute('data-count');
-      var count = raw === 'all' ? 'all' : parseInt(raw, 10);
-      startOverlay.classList.add('hidden');
-      newGame(count);
-    });
-  }
 
   showStartOverlay();
 })();
