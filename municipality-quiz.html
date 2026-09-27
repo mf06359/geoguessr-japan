@@ -115,6 +115,26 @@
   }
   .sign-card .hint-pref { margin-top: 8px; font-size: .8rem; color: var(--sub-ink); }
 
+  .muni-tabs { display: flex; gap: 6px; margin-bottom: 10px; }
+  .muni-tabs button {
+    flex: 1; padding: 8px 4px; font-size: .82rem;
+  }
+  .muni-tabs button.active {
+    background: var(--accent-2); color: #241205; border-color: var(--accent-2); font-weight: 700;
+  }
+  .muni-list-label { font-size: .72rem; color: var(--sub-ink); margin-bottom: 6px; }
+  .muni-list {
+    max-height: 240px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px;
+  }
+  .muni-list button {
+    flex: none; width: 100%; text-align: left; padding: 8px 12px; font-size: .85rem;
+  }
+  .muni-list .empty { color: var(--sub-ink); font-size: .8rem; padding: 8px 2px; }
+  .muni-list button.correct { background: var(--accent) !important; color: #052e1d !important; border-color: var(--accent) !important; }
+  .muni-list button.wrong { background: var(--bad) !important; color: #450a0a !important; border-color: var(--bad) !important; }
+  .muni-list button.reveal { background: var(--warn) !important; color: #442c00 !important; border-color: var(--warn) !important; }
+  .muni-list button.skipped-reveal { background: var(--accent-2) !important; color: #241205 !important; border-color: var(--accent-2) !important; }
+
   .feedback {
     min-height: 46px; font-size: .88rem; line-height: 1.4; border-radius: 10px;
     padding: 10px 12px; transition: background .2s, color .2s;
@@ -318,6 +338,11 @@
       <div class="hint-pref" id="hintPref">&nbsp;</div>
     </div>
 
+    <div class="card" id="muniListCard" style="display:none;">
+      <div class="muni-tabs" id="muniTabs"></div>
+      <div class="muni-list" id="muniList"></div>
+    </div>
+
     <div class="card">
       <div class="feedback idle" id="feedback">地図から都道府県をクリックして解答してね</div>
       <div class="progress-bar"><div id="progressFill"></div></div>
@@ -404,6 +429,11 @@
   var countSubtitle2 = document.getElementById('countSubtitle2');
   var countAllBtn2 = document.getElementById('countAllBtn2');
   var backFromCount = document.getElementById('backFromCount');
+  var muniListCard = document.getElementById('muniListCard');
+  var muniTabsEl = document.getElementById('muniTabs');
+  var muniListEl = document.getElementById('muniList');
+  var muniActiveType = null;
+  var muniGroups = null;
 
   var REGIONS = [
     { name: '北海道', codes: ['1'] },
@@ -634,12 +664,20 @@
     for (var i = 0; i < els.length; i++) {
       els[i].classList.remove('correct', 'wrong', 'reveal', 'skipped-reveal');
     }
+    var listEls = muniListEl.querySelectorAll('.correct, .wrong, .reveal, .skipped-reveal');
+    for (var j = 0; j < listEls.length; j++) {
+      listEls[j].classList.remove('correct', 'wrong', 'reveal', 'skipped-reveal');
+    }
     clearPin();
   }
 
   function setLocked(v) {
     locked = v;
     mapWrap.classList.toggle('locked-map', v);
+    var listButtons = muniListEl.querySelectorAll('button');
+    for (var i = 0; i < listButtons.length; i++) {
+      listButtons[i].disabled = v;
+    }
   }
 
   function updateStats() {
@@ -780,9 +818,12 @@
       svgMap.insertBefore(muniShapesGroup, pinLayer);
       svgMap.setAttribute('viewBox', muniData.viewBox);
       signLabelEl.textContent = 'この市区町村はどこ？';
+      muniListCard.style.display = '';
+      buildMuniAnswerList();
     } else {
       prefecturesGroup.style.display = '';
       if (muniShapesGroup) { muniShapesGroup.remove(); muniShapesGroup = null; }
+      muniListCard.style.display = 'none';
       var allPaths = prefecturesGroup.querySelectorAll('.prefecture');
       if (scopeType === 'region') {
         var minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
@@ -806,6 +847,51 @@
       signLabelEl.textContent = 'この市区町村がある都道府県は？';
     }
     if (mapWrap._resetZoom) mapWrap._resetZoom();
+  }
+
+  // ---- muni-click mode: answer by picking from a 市/区/町/村 list ----
+  function classifyType(name) {
+    var last = name.charAt(name.length - 1);
+    return (last === '市' || last === '区' || last === '町' || last === '村') ? last : '市';
+  }
+
+  function buildMuniAnswerList() {
+    muniGroups = { '市': [], '区': [], '町': [], '村': [] };
+    muniData.munis.forEach(function (m) {
+      muniGroups[classifyType(m.name)].push(m);
+    });
+    muniTabsEl.innerHTML = '';
+    var order = ['市', '区', '町', '村'];
+    var firstType = null;
+    order.forEach(function (type) {
+      if (muniGroups[type].length === 0) return;
+      if (!firstType) firstType = type;
+      var btn = document.createElement('button');
+      btn.type = 'button';
+      btn.setAttribute('data-type', type);
+      btn.textContent = type + '（' + muniGroups[type].length + '）';
+      btn.addEventListener('click', function () { renderMuniList(type); });
+      muniTabsEl.appendChild(btn);
+    });
+    renderMuniList(firstType);
+  }
+
+  function renderMuniList(type) {
+    muniActiveType = type;
+    Array.prototype.forEach.call(muniTabsEl.children, function (btn) {
+      btn.classList.toggle('active', btn.getAttribute('data-type') === type);
+    });
+    muniListEl.innerHTML = '';
+    var list = (type && muniGroups) ? muniGroups[type] : [];
+    list.forEach(function (m) {
+      var btn = document.createElement('button');
+      btn.type = 'button';
+      btn.textContent = m.name;
+      btn.setAttribute('data-code', m.code);
+      btn.disabled = locked;
+      btn.addEventListener('click', function () { handleAnswer(m.code); });
+      muniListEl.appendChild(btn);
+    });
   }
 
   function newGame(count) {
@@ -841,7 +927,7 @@
       current = { code: m.code, cityName: m.name };
       cityNameEl.textContent = current.cityName;
       hintPrefEl.textContent = muniData.name;
-      feedbackEl.textContent = '地図から市区町村をクリックして解答してね';
+      feedbackEl.textContent = '地図をクリック、または下のリストから選んで解答してね';
     } else {
       current = {
         code: m[0],
@@ -889,15 +975,20 @@
     if (mode === 'muni-click') {
       var isCorrectM = selectedCode === current.code;
       var selElM = mapWrap.querySelector('.muni-shape[data-code="' + selectedCode + '"]');
+      var selListBtn = muniListEl.querySelector('button[data-code="' + selectedCode + '"]');
       if (isCorrectM) {
         score++;
         if (selElM) selElM.classList.add('correct');
+        if (selListBtn) selListBtn.classList.add('correct');
         feedbackEl.textContent = '✅ 正解！ ' + current.cityName + ' はここです。';
         feedbackEl.className = 'feedback ok';
       } else {
         if (selElM) selElM.classList.add('wrong');
+        if (selListBtn) selListBtn.classList.add('wrong');
         var correctElM = mapWrap.querySelector('.muni-shape[data-code="' + current.code + '"]');
+        var correctListBtn = muniListEl.querySelector('button[data-code="' + current.code + '"]');
         if (correctElM) correctElM.classList.add('reveal');
+        if (correctListBtn) correctListBtn.classList.add('reveal');
         var wrongNameM = (selElM && selElM.getAttribute('data-name')) || '不明';
         feedbackEl.textContent = '❌ 不正解… ' + current.cityName + ' はこちらでした。(選択: ' + wrongNameM + ')';
         feedbackEl.className = 'feedback bad';
@@ -944,7 +1035,9 @@
 
     if (mode === 'muni-click') {
       var correctElM = mapWrap.querySelector('.muni-shape[data-code="' + current.code + '"]');
+      var correctListBtnSkip = muniListEl.querySelector('button[data-code="' + current.code + '"]');
       if (correctElM) correctElM.classList.add('skipped-reveal');
+      if (correctListBtnSkip) correctListBtnSkip.classList.add('skipped-reveal');
       feedbackEl.textContent = '⏭️ スキップ： ' + current.cityName + ' はこちらでした。';
       feedbackEl.className = 'feedback skip';
       updateStats();
