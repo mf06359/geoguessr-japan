@@ -473,6 +473,51 @@
     return a;
   }
 
+  // ---- mastery tracking: items answered correctly repeatedly show up less
+  // often on later plays, so review time concentrates on what's still shaky.
+  // A wrong answer resets the streak, so it comes right back into rotation.
+  var MASTERY_KEY = 'muniquiz-mastery-v1';
+  var MASTERY = loadMastery();
+
+  function loadMastery() {
+    try {
+      var raw = window.localStorage.getItem(MASTERY_KEY);
+      return raw ? JSON.parse(raw) : {};
+    } catch (e) {
+      return {};
+    }
+  }
+
+  function saveMastery() {
+    try {
+      window.localStorage.setItem(MASTERY_KEY, JSON.stringify(MASTERY));
+    } catch (e) { /* private mode / storage disabled: just skip persistence */ }
+  }
+
+  function recordMastery(key, correct) {
+    var streak = MASTERY[key] || 0;
+    MASTERY[key] = correct ? streak + 1 : 0;
+    saveMastery();
+  }
+
+  function itemWeight(key) {
+    var streak = MASTERY[key] || 0;
+    // unseen/just-missed = 1.0 baseline; each further correct streak halves
+    // the odds of reappearing soon, with a floor so it never fully drops out.
+    return Math.max(0.12, 1 / (1 + streak * 1.6));
+  }
+
+  // Efraimidis-Spirakis weighted random permutation: O(n log n), single pass.
+  function weightedShuffle(items, weightFn) {
+    return items
+      .map(function (item) {
+        var w = Math.max(weightFn(item), 0.0001);
+        return { item: item, key: Math.pow(Math.random(), 1 / w) };
+      })
+      .sort(function (a, b) { return b.key - a.key; })
+      .map(function (x) { return x.item; });
+  }
+
   // ---- pan & zoom (mouse wheel, pinch, drag, buttons) ----
   function setupPanZoom(container, target) {
     var scale = 1, tx = 0, ty = 0;
@@ -894,6 +939,10 @@
     });
   }
 
+  function masteryKeyFor(m) {
+    return mode === 'muni-click' ? ('muni:' + m.code) : ('pref:' + m[0] + ':' + m[2]);
+  }
+
   function newGame(count) {
     var pool;
     if (mode === 'muni-click') {
@@ -903,7 +952,7 @@
     } else {
       pool = MUNI;
     }
-    var shuffled = shuffle(pool);
+    var shuffled = weightedShuffle(pool, function (m) { return itemWeight(masteryKeyFor(m)); });
     queue = (count === 'all' || !count) ? shuffled : shuffled.slice(0, Math.min(count, shuffled.length));
     idx = 0;
     score = 0;
@@ -923,8 +972,9 @@
     }
     var m = queue[idx];
     idx++;
+    var masteryKey = masteryKeyFor(m);
     if (mode === 'muni-click') {
-      current = { code: m.code, cityName: m.name };
+      current = { code: m.code, cityName: m.name, masteryKey: masteryKey };
       cityNameEl.textContent = current.cityName;
       hintPrefEl.textContent = muniData.name;
       feedbackEl.textContent = '地図をクリック、または下のリストから選んで解答してね';
@@ -936,7 +986,8 @@
         gun: m[3] || '',
         x: m[4],
         y: m[5],
-        validCodes: nameToCodes[m[2]]
+        validCodes: nameToCodes[m[2]],
+        masteryKey: masteryKey
       };
       cityNameEl.textContent = current.cityName;
       hintPrefEl.textContent = current.gun ? ('(' + current.gun + ')') : ' ';
@@ -974,6 +1025,7 @@
 
     if (mode === 'muni-click') {
       var isCorrectM = selectedCode === current.code;
+      recordMastery(current.masteryKey, isCorrectM);
       var selElM = mapWrap.querySelector('.muni-shape[data-code="' + selectedCode + '"]');
       var selListBtn = muniListEl.querySelector('button[data-code="' + selectedCode + '"]');
       if (isCorrectM) {
@@ -1002,6 +1054,7 @@
     }
 
     var isCorrect = current.validCodes.indexOf(selectedCode) !== -1;
+    recordMastery(current.masteryKey, isCorrect);
     var selEl = mapWrap.querySelector('.prefecture[data-code="' + selectedCode + '"]');
 
     if (isCorrect) {
