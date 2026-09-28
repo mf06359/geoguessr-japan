@@ -193,6 +193,7 @@
   .start-card p { margin: 0 0 22px; color: var(--sub-ink); font-size: .85rem; line-height: 1.5; }
   .count-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
   .count-grid button { padding: 16px 8px; font-size: 1rem; }
+  .progress-note { margin: 14px 0 0; font-size: .72rem; color: var(--sub-ink); line-height: 1.5; }
   .back-link {
     display: inline-block; margin-top: 16px; font-size: .78rem; color: var(--sub-ink);
     text-decoration: underline; cursor: pointer; background: none; border: none;
@@ -250,7 +251,11 @@
         <button type="button" data-count="10">10問</button>
         <button type="button" data-count="all" class="primary" id="countAllBtn2">全部</button>
       </div>
-      <button type="button" class="back-link" id="backFromCount">← 戻る</button>
+      <p class="progress-note" id="progressNote2">&nbsp;</p>
+      <div style="display:flex; flex-direction:column; align-items:center;">
+        <button type="button" class="back-link" id="backFromCount">← 戻る</button>
+        <button type="button" class="back-link" id="resetProgressBtn2">🔄 この範囲の正解記録をリセット</button>
+      </div>
     </div>
   </div>
 </div>
@@ -430,6 +435,8 @@
   var countSubtitle2 = document.getElementById('countSubtitle2');
   var countAllBtn2 = document.getElementById('countAllBtn2');
   var backFromCount = document.getElementById('backFromCount');
+  var progressNote2 = document.getElementById('progressNote2');
+  var resetProgressBtn2 = document.getElementById('resetProgressBtn2');
   var muniListCard = document.getElementById('muniListCard');
   var muniTabsEl = document.getElementById('muniTabs');
   var muniListEl = document.getElementById('muniList');
@@ -814,26 +821,40 @@
   });
 
   function goToCountStep() {
-    var total;
+    var pool = getPool();
+    var total = pool.length;
     if (mode === 'muni-click') {
       countTitle2.textContent = muniData.name + 'を出題';
-      total = muniData.munis.length;
     } else if (scopeType === 'region') {
       countTitle2.textContent = scopeRegionName + '地方から出題';
-      total = MUNI.filter(function (m) { return scopeCodes.indexOf(m[0]) !== -1; }).length;
     } else {
       countTitle2.textContent = '全国から出題';
-      total = MUNI.length;
     }
     countSubtitle2.textContent = '出題数を選んでください（全' + total + '市区町村）';
     countAllBtn2.textContent = '全' + total + '市区町村';
+    updateProgressNote2(pool);
     showWizardStep(stepCount);
+  }
+
+  function updateProgressNote2(pool) {
+    var doneCount = pool.filter(function (m) { return MASTERY[masteryKeyFor(m)] > 0; }).length;
+    progressNote2.textContent = doneCount > 0
+      ? ('✅ 正解済み ' + doneCount + '/' + pool.length + '件は、出し切るかリセットするまで出題されません')
+      : ' ';
   }
 
   backFromCount.addEventListener('click', function () {
     if (mode === 'muni-click') showWizardStep(stepPref);
     else if (scopeType === 'region') showWizardStep(stepRegion);
     else showWizardStep(stepScope);
+  });
+
+  resetProgressBtn2.addEventListener('click', function (e) {
+    e.stopPropagation();
+    var pool = getPool();
+    pool.forEach(function (m) { delete MASTERY[masteryKeyFor(m)]; });
+    saveMastery();
+    updateProgressNote2(pool);
   });
 
   Array.prototype.forEach.call(startOverlay.querySelectorAll('button[data-count]'), function (btn) {
@@ -944,15 +965,30 @@
     return mode === 'muni-click' ? ('muni:' + m.code) : ('pref:' + m[0] + ':' + m[2]);
   }
 
-  function newGame(count) {
-    var pool;
+  function getPool() {
     if (mode === 'muni-click') {
-      pool = muniData.munis;
+      return muniData.munis;
     } else if (scopeType === 'region') {
-      pool = MUNI.filter(function (m) { return scopeCodes.indexOf(m[0]) !== -1; });
+      return MUNI.filter(function (m) { return scopeCodes.indexOf(m[0]) !== -1; });
     } else {
-      pool = MUNI;
+      return MUNI;
     }
+  }
+
+  // Items answered correctly (streak > 0) are excluded from the pool until
+  // the whole current scope has been cleared, or it's reset manually.
+  function unmasteredPool(pool) {
+    var remaining = pool.filter(function (m) { return !(MASTERY[masteryKeyFor(m)] > 0); });
+    if (remaining.length === 0) {
+      pool.forEach(function (m) { delete MASTERY[masteryKeyFor(m)]; });
+      saveMastery();
+      remaining = pool;
+    }
+    return remaining;
+  }
+
+  function newGame(count) {
+    var pool = unmasteredPool(getPool());
     var shuffled = weightedShuffle(pool, function (m) { return itemWeight(masteryKeyFor(m)); });
     queue = (count === 'all' || !count) ? shuffled : shuffled.slice(0, Math.min(count, shuffled.length));
     idx = 0;

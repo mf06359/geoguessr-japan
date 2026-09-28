@@ -183,6 +183,7 @@
   .start-card p { margin: 0 0 22px; color: var(--sub-ink); font-size: .85rem; line-height: 1.5; }
   .count-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
   .count-grid button { padding: 16px 8px; font-size: 1rem; }
+  .progress-note { margin: 14px 0 0; font-size: .72rem; color: var(--sub-ink); line-height: 1.5; }
   .back-link {
     display: inline-block; margin-top: 16px; font-size: .78rem; color: var(--sub-ink);
     text-decoration: underline; cursor: pointer; background: none; border: none;
@@ -201,7 +202,11 @@
       <button data-count="10">10問</button>
       <button data-count="all" class="primary" id="countAllBtn">全部</button>
     </div>
-    <button class="back-link" id="backToPrefBtn">← 都道府県を選び直す</button>
+    <p class="progress-note" id="progressNoteP">&nbsp;</p>
+    <div style="display:flex; flex-direction:column; align-items:center;">
+      <button class="back-link" id="backToPrefBtn">← 都道府県を選び直す</button>
+      <button class="back-link" id="resetProgressBtnP">🔄 この都道府県の正解記録をリセット</button>
+    </div>
   </div>
 </div>
 
@@ -388,6 +393,8 @@
   var countSubtitle = document.getElementById('countSubtitle');
   var countAllBtn = document.getElementById('countAllBtn');
   var backToPrefBtn = document.getElementById('backToPrefBtn');
+  var progressNoteP = document.getElementById('progressNoteP');
+  var resetProgressBtnP = document.getElementById('resetProgressBtnP');
 
   var stage = 'pref-select'; // pref-select | playing | summary
   var selectedCode = null;
@@ -398,6 +405,36 @@
   var answered = 0;
   var locked = false;
   var current = null;
+
+  // ---- correct-answer tracking: a near-perfect guess (score >= 90) is
+  // excluded from that prefecture's pool until it's fully cleared or reset.
+  var CORRECT_KEY = 'prefmuniquiz-correct-v1';
+  var CORRECT_THRESHOLD = 90;
+  var CORRECT = loadCorrect();
+
+  function loadCorrect() {
+    try {
+      var raw = window.localStorage.getItem(CORRECT_KEY);
+      return raw ? JSON.parse(raw) : {};
+    } catch (e) {
+      return {};
+    }
+  }
+  function saveCorrect() {
+    try {
+      window.localStorage.setItem(CORRECT_KEY, JSON.stringify(CORRECT));
+    } catch (e) { /* private mode / storage disabled: just skip persistence */ }
+  }
+  function correctKeyFor(m) {
+    return m[0] + ':' + m[2];
+  }
+  function updateProgressNoteP(code) {
+    var pool = PREF_MUNI[code];
+    var doneCount = pool.filter(function (m) { return CORRECT[correctKeyFor(m)]; }).length;
+    progressNoteP.textContent = doneCount > 0
+      ? ('✅ 高得点済み ' + doneCount + '/' + pool.length + '件は、出し切るかリセットするまで出題されません')
+      : ' ';
+  }
 
   // ---- setup prefecture select list ----
   PREF_CODES.forEach(function (code) {
@@ -645,6 +682,7 @@
     countTitle.textContent = PREF_NAME_BY_CODE[code] + 'を出題';
     countSubtitle.textContent = '出題数を選んでください（全' + total + '市区町村）';
     countAllBtn.textContent = '全' + total + '市区町村';
+    updateProgressNoteP(code);
     countOverlay.classList.remove('hidden');
   }
 
@@ -673,6 +711,14 @@
   backToPrefBtn.addEventListener('click', function () {
     countOverlay.classList.add('hidden');
     selectedCode = null;
+  });
+
+  resetProgressBtnP.addEventListener('click', function (e) {
+    e.stopPropagation();
+    if (!selectedCode) return;
+    PREF_MUNI[selectedCode].forEach(function (m) { delete CORRECT[correctKeyFor(m)]; });
+    saveCorrect();
+    updateProgressNoteP(selectedCode);
   });
 
   var countButtons = countOverlay.querySelectorAll('button[data-count]');
@@ -706,7 +752,13 @@
     clearPins();
 
     var pool = PREF_MUNI[code];
-    var shuffled = shuffle(pool);
+    var remaining = pool.filter(function (m) { return !CORRECT[correctKeyFor(m)]; });
+    if (remaining.length === 0) {
+      pool.forEach(function (m) { delete CORRECT[correctKeyFor(m)]; });
+      saveCorrect();
+      remaining = pool;
+    }
+    var shuffled = shuffle(remaining);
     queue = (count === 'all' || !count) ? shuffled : shuffled.slice(0, Math.min(count, shuffled.length));
     idx = 0;
     totalScore = 0;
@@ -771,6 +823,11 @@
     var distPct = dist / bboxDiag;
     var scoreVal = Math.round(Math.max(0, 100 * Math.exp(-4 * distPct)));
     totalScore += scoreVal;
+
+    if (scoreVal >= CORRECT_THRESHOLD) {
+      CORRECT[current.code + ':' + current.cityName] = true;
+      saveCorrect();
+    }
 
     var tier = scoreTier(scoreVal);
     feedbackEl.textContent = tier.label + ' ' + current.cityName + ' はここでした。（' + scoreVal + '点）';

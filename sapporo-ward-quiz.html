@@ -163,6 +163,11 @@
   .start-card p { margin: 0 0 22px; color: var(--sub-ink); font-size: .85rem; line-height: 1.5; }
   .count-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
   .count-grid button { padding: 16px 8px; font-size: 1rem; }
+  .progress-note { margin: 14px 0 0; font-size: .72rem; color: var(--sub-ink); line-height: 1.5; }
+  .back-link {
+    display: inline-block; margin-top: 10px; font-size: .78rem; color: var(--sub-ink);
+    text-decoration: underline; cursor: pointer; background: none; border: none; padding: 0;
+  }
 </style>
 </head>
 <body>
@@ -177,6 +182,8 @@
       <button type="button" data-count="10">10問</button>
       <button type="button" data-count="all" class="primary">全924町名</button>
     </div>
+    <p class="progress-note" id="progressNote">&nbsp;</p>
+    <button type="button" class="back-link" id="resetProgressBtn">🔄 正解記録をリセット</button>
   </div>
 </div>
 
@@ -289,6 +296,8 @@
   var playAgainBtn = document.getElementById('playAgainBtn');
   var startOverlay = document.getElementById('startOverlay');
   var wardListEl = document.getElementById('wardList');
+  var progressNoteEl = document.getElementById('progressNote');
+  var resetProgressBtn = document.getElementById('resetProgressBtn');
 
   var queue = [];
   var idx = 0;
@@ -537,10 +546,24 @@
 
   function showStartOverlay() {
     startOverlay.classList.remove('hidden');
+    updateProgressNote();
+  }
+
+  function updateProgressNote() {
+    var doneCount = AREAS.filter(function (a) { return MASTERY['area:' + a[0] + ':' + a[1]] > 0; }).length;
+    progressNoteEl.textContent = doneCount > 0
+      ? ('✅ 正解済み ' + doneCount + '/' + AREAS.length + '件は、出し切るかリセットするまで出題されません')
+      : ' ';
   }
 
   function newGame(count) {
-    var shuffled = weightedShuffle(AREAS, function (a) { return itemWeight('area:' + a[0] + ':' + a[1]); });
+    var remaining = AREAS.filter(function (a) { return !(MASTERY['area:' + a[0] + ':' + a[1]] > 0); });
+    if (remaining.length === 0) {
+      MASTERY = {};
+      saveMastery();
+      remaining = AREAS;
+    }
+    var shuffled = weightedShuffle(remaining, function (a) { return itemWeight('area:' + a[0] + ':' + a[1]); });
     queue = (count === 'all' || !count) ? shuffled : shuffled.slice(0, Math.min(count, shuffled.length));
     idx = 0;
     score = 0;
@@ -653,6 +676,12 @@
     if (!current && idx === 0) return;
     setLocked(true);
     showSummary();
+  });
+  resetProgressBtn.addEventListener('click', function (e) {
+    e.stopPropagation();
+    MASTERY = {};
+    saveMastery();
+    updateProgressNote();
   });
 
   var countButtons = startOverlay.querySelectorAll('button[data-count]');

@@ -147,6 +147,11 @@
   .start-card p { margin: 0 0 22px; color: var(--sub-ink); font-size: .85rem; line-height: 1.5; }
   .count-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
   .count-grid button { padding: 16px 8px; font-size: 1rem; }
+  .progress-note { margin: 14px 0 0; font-size: .72rem; color: var(--sub-ink); line-height: 1.5; }
+  .back-link {
+    display: inline-block; margin-top: 10px; font-size: .78rem; color: var(--sub-ink);
+    text-decoration: underline; cursor: pointer; background: none; border: none; padding: 0;
+  }
 </style>
 </head>
 <body>
@@ -161,6 +166,8 @@
       <button data-count="10">10問</button>
       <button data-count="all" class="primary">全379エリア</button>
     </div>
+    <p class="progress-note" id="progressNote">&nbsp;</p>
+    <button type="button" class="back-link" id="resetProgressBtn">🔄 正解記録をリセット</button>
   </div>
 </div>
 
@@ -640,6 +647,8 @@
   var summaryMsgEl = document.getElementById('summaryMsg');
   var playAgainBtn = document.getElementById('playAgainBtn');
   var startOverlay = document.getElementById('startOverlay');
+  var progressNoteEl = document.getElementById('progressNote');
+  var resetProgressBtn = document.getElementById('resetProgressBtn');
 
   var queue = [];
   var idx = 0;
@@ -647,6 +656,31 @@
   var answered = 0;
   var locked = false;
   var current = null;
+
+  // ---- correct-answer tracking: once you get one right it's excluded from
+  // the pool until you've cycled through everything else, or you reset.
+  var PROGRESS_KEY = 'areacode-region-quiz-correct-v1';
+  var CORRECT = loadProgress();
+
+  function loadProgress() {
+    try {
+      var raw = window.localStorage.getItem(PROGRESS_KEY);
+      return raw ? JSON.parse(raw) : {};
+    } catch (e) {
+      return {};
+    }
+  }
+  function saveProgress() {
+    try {
+      window.localStorage.setItem(PROGRESS_KEY, JSON.stringify(CORRECT));
+    } catch (e) { /* private mode / storage disabled: just skip persistence */ }
+  }
+  function updateProgressNote() {
+    var doneCount = DATA.filter(function (m) { return CORRECT[m[0]]; }).length;
+    progressNoteEl.textContent = doneCount > 0
+      ? ('✅ 正解済み ' + doneCount + '/' + DATA.length + '件は、出し切るかリセットするまで出題されません')
+      : ' ';
+  }
 
   function shuffle(arr) {
     var a = arr.slice();
@@ -836,10 +870,17 @@
 
   function showStartOverlay() {
     startOverlay.classList.remove('hidden');
+    updateProgressNote();
   }
 
   function newGame(count) {
-    var shuffled = shuffle(DATA);
+    var remaining = DATA.filter(function (m) { return !CORRECT[m[0]]; });
+    if (remaining.length === 0) {
+      CORRECT = {};
+      saveProgress();
+      remaining = DATA;
+    }
+    var shuffled = shuffle(remaining);
     queue = (count === 'all' || !count) ? shuffled : shuffled.slice(0, Math.min(count, shuffled.length));
     idx = 0;
     score = 0;
@@ -899,6 +940,8 @@
 
     if (selectedCode === current.code) {
       score++;
+      CORRECT[current.code] = true;
+      saveProgress();
       if (selEl) selEl.classList.add('correct');
       feedbackEl.textContent = '✅ 正解！ ' + current.code + ' は ' + current.pref + '（' + current.area + 'エリア）です。';
       feedbackEl.className = 'feedback ok';
@@ -946,6 +989,12 @@
     if (!current && idx === 0) return;
     setLocked(true);
     showSummary();
+  });
+  resetProgressBtn.addEventListener('click', function (e) {
+    e.stopPropagation();
+    CORRECT = {};
+    saveProgress();
+    updateProgressNote();
   });
 
   var countButtons = startOverlay.querySelectorAll('button[data-count]');
