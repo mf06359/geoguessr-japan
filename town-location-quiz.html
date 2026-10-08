@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>町名位置クイズ - 日本地図</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/maplibre-gl@4.7.1/dist/maplibre-gl.css" integrity="sha256-V2sIX92Uh6ZaGSFTKMHghsB85b9toJtmazgG09AI2uk=" crossorigin="">
 <style>
   :root {
     --bg: #0f172a;
@@ -224,7 +225,7 @@
         <button id="nextBtn" class="primary" disabled>次へ</button>
       </div>
       <div class="controls">
-        <button id="labelBtn" class="toggle" type="button">🏷️ 地名ラベル（ヒント）: OFF</button>
+        <button id="labelBtn" class="toggle" type="button">🗺️ 地図: 読み込み中…</button>
       </div>
       <div class="controls">
         <button id="endBtn">終了して結果を見る</button>
@@ -243,10 +244,12 @@
 
 <footer>
   町名データ: <a href="https://github.com/geolonia/japanese-addresses" target="_blank" rel="noopener">geolonia/japanese-addresses</a>（国土交通省 位置参照情報） /
-  地図: <a href="https://maps.gsi.go.jp/development/ichiran.html" target="_blank" rel="noopener">国土地理院 地理院タイル</a>（全国最新写真・標準地図）
+  地図: <a href="https://openfreemap.org" target="_blank" rel="noopener">OpenFreeMap</a>（© OpenMapTiles / © OpenStreetMap contributors）・<a href="https://maps.gsi.go.jp/development/ichiran.html" target="_blank" rel="noopener">国土地理院 地理院タイル</a>
 </footer>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+<script src="https://cdn.jsdelivr.net/npm/maplibre-gl@4.7.1/dist/maplibre-gl.js" integrity="sha256-vpYzxNhw4m+zfxz+XFp3GBZnEUAD6hYgeseFDY2ordE=" crossorigin=""></script>
+<script src="https://cdn.jsdelivr.net/npm/@maplibre/maplibre-gl-leaflet@0.0.22/leaflet-maplibre-gl.js" integrity="sha256-WezY0rMnedJPG9Jrh8iJDyfkpueFjZk70X5Nh45tJnc=" crossorigin=""></script>
 <script>
 (function () {
   var PREFS = [
@@ -294,26 +297,48 @@
     prefSelect.appendChild(opt);
   });
 
-  // ---- map: aerial photo by default (no labels), GSI standard map as an optional label hint ----
+  // ---- map ----
   var map = L.map('map', { zoomSnap: 0.5, zoomDelta: 0.5, wheelPxPerZoomLevel: 90 }).setView([36.2, 138.0], 5);
-  var plainLayer = L.tileLayer('https://cyberjapandata.gsi.go.jp/xyz/seamlessphoto/{z}/{x}/{y}.jpg', {
-    maxZoom: 18,
-    attribution: '<a href="https://maps.gsi.go.jp/development/ichiran.html">地理院タイル（全国最新写真）</a>'
-  });
-  var labelLayer = L.tileLayer('https://cyberjapandata.gsi.go.jp/xyz/std/{z}/{x}/{y}.png', {
-    maxZoom: 18,
-    attribution: '<a href="https://maps.gsi.go.jp/development/ichiran.html">地理院タイル（標準地図）</a>'
-  });
-  var labelsOn = false;
-  plainLayer.addTo(map);
+  var GSI = '<a href="https://maps.gsi.go.jp/development/ichiran.html">地理院タイル</a>';
+  var VECTOR_ATTR = '<a href="https://openfreemap.org" target="_blank" rel="noopener">OpenFreeMap</a> <a href="https://www.openmaptiles.org/" target="_blank" rel="noopener">&copy; OpenMapTiles</a> Data from <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>';
+  var BASES = [
+    { label: '地図（地名なし）', layer: null },
+    { label: '航空写真', layer: L.tileLayer('https://cyberjapandata.gsi.go.jp/xyz/seamlessphoto/{z}/{x}/{y}.jpg', { maxZoom: 18, attribution: GSI + '（全国最新写真）' }) },
+    { label: '標準地図（地名あり・ヒント）', layer: L.tileLayer('https://cyberjapandata.gsi.go.jp/xyz/std/{z}/{x}/{y}.png', { maxZoom: 18, attribution: GSI + '（標準地図）' }) }
+  ];
+  var baseIdx = -1;
+  var activeBase = null;
+  var baseTouched = false;
   var markerLayer = L.layerGroup().addTo(map);
 
+  function setBase(i) {
+    if (!BASES[i].layer) return false;
+    if (activeBase) map.removeLayer(activeBase);
+    baseIdx = i;
+    activeBase = BASES[i].layer;
+    activeBase.addTo(map);
+    if (activeBase.bringToBack) activeBase.bringToBack();
+    labelBtn.textContent = '🗺️ 地図: ' + BASES[i].label;
+    labelBtn.classList.toggle('on', i > 1);
+    return true;
+  }
+
+  // Label-free road map: OpenFreeMap's style with every text/icon layer removed.
+  setBase(1);
+  fetch('https://tiles.openfreemap.org/styles/liberty')
+    .then(function (res) { if (!res.ok) throw new Error('style'); return res.json(); })
+    .then(function (style) {
+      style.layers = style.layers.filter(function (l) { return l.type !== 'symbol'; });
+      BASES[0].layer = L.maplibreGL({ style: style, attribution: VECTOR_ATTR, maxZoom: 18 });
+      if (!baseTouched) setBase(0);
+    })
+    .catch(function () { /* stay on the aerial photo */ });
+
   labelBtn.addEventListener('click', function () {
-    labelsOn = !labelsOn;
-    if (labelsOn) { map.removeLayer(plainLayer); labelLayer.addTo(map); }
-    else { map.removeLayer(labelLayer); plainLayer.addTo(map); }
-    labelBtn.textContent = '🏷️ 地名ラベル（ヒント）: ' + (labelsOn ? 'ON' : 'OFF');
-    labelBtn.classList.toggle('on', labelsOn);
+    baseTouched = true;
+    var i = baseIdx;
+    do { i = (i + 1) % BASES.length; } while (!BASES[i].layer);
+    setBase(i);
   });
 
   // ---- state ----

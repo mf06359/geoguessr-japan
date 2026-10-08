@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>駅位置クイズ - 日本地図</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/maplibre-gl@4.7.1/dist/maplibre-gl.css" integrity="sha256-V2sIX92Uh6ZaGSFTKMHghsB85b9toJtmazgG09AI2uk=" crossorigin="">
 <style>
   :root {
     --bg: #0f172a;
@@ -227,7 +228,7 @@
         <button id="hlBtn" class="toggle on" type="button">🛤️ 出題路線を強調: ON</button>
       </div>
       <div class="controls">
-        <button id="baseBtn" class="toggle" type="button">🗺️ 地図: 航空写真</button>
+        <button id="baseBtn" class="toggle" type="button">🗺️ 地図: 読み込み中…</button>
       </div>
       <div class="controls">
         <button id="endBtn">終了して結果を見る</button>
@@ -246,10 +247,12 @@
 
 <footer>
   駅・路線データ: <a href="https://nlftp.mlit.go.jp/ksj/gml/datalist/KsjTmplt-N02-v3_1.html" target="_blank" rel="noopener">国土数値情報（鉄道データ）</a>（国土交通省）を加工して作成 /
-  地図: <a href="https://maps.gsi.go.jp/development/ichiran.html" target="_blank" rel="noopener">国土地理院 地理院タイル</a>
+  地図: <a href="https://openfreemap.org" target="_blank" rel="noopener">OpenFreeMap</a>（© OpenMapTiles / © OpenStreetMap contributors）・<a href="https://maps.gsi.go.jp/development/ichiran.html" target="_blank" rel="noopener">国土地理院 地理院タイル</a>
 </footer>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+<script src="https://cdn.jsdelivr.net/npm/maplibre-gl@4.7.1/dist/maplibre-gl.js" integrity="sha256-vpYzxNhw4m+zfxz+XFp3GBZnEUAD6hYgeseFDY2ordE=" crossorigin=""></script>
+<script src="https://cdn.jsdelivr.net/npm/@maplibre/maplibre-gl-leaflet@0.0.22/leaflet-maplibre-gl.js" integrity="sha256-WezY0rMnedJPG9Jrh8iJDyfkpueFjZk70X5Nh45tJnc=" crossorigin=""></script>
 <script>
 (function () {
   var PREFS = [
@@ -303,24 +306,48 @@
   // ---- map ----
   var map = L.map('map', { zoomSnap: 0.5, zoomDelta: 0.5, wheelPxPerZoomLevel: 90, preferCanvas: true }).setView([36.2, 138.0], 5);
   var GSI = '<a href="https://maps.gsi.go.jp/development/ichiran.html">地理院タイル</a>';
+  var VECTOR_ATTR = '<a href="https://openfreemap.org" target="_blank" rel="noopener">OpenFreeMap</a> <a href="https://www.openmaptiles.org/" target="_blank" rel="noopener">&copy; OpenMapTiles</a> Data from <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>';
   var BASES = [
+    { label: '地図（地名なし）', layer: null },
     { label: '航空写真', layer: L.tileLayer('https://cyberjapandata.gsi.go.jp/xyz/seamlessphoto/{z}/{x}/{y}.jpg', { maxZoom: 18, attribution: GSI + '（全国最新写真）' }) },
     { label: '白地図', layer: L.tileLayer('https://cyberjapandata.gsi.go.jp/xyz/blank/{z}/{x}/{y}.png', { maxZoom: 18, maxNativeZoom: 14, attribution: GSI + '（白地図）' }) },
     { label: '標準地図（駅名あり・ヒント）', layer: L.tileLayer('https://cyberjapandata.gsi.go.jp/xyz/std/{z}/{x}/{y}.png', { maxZoom: 18, attribution: GSI + '（標準地図）' }) }
   ];
-  var baseIdx = 0;
-  BASES[0].layer.addTo(map);
+  var baseIdx = -1;
+  var activeBase = null;
+  var baseTouched = false;
   var lineLayer = L.layerGroup().addTo(map);
   var markerLayer = L.layerGroup().addTo(map);
 
-  baseBtn.addEventListener('click', function () {
-    map.removeLayer(BASES[baseIdx].layer);
-    baseIdx = (baseIdx + 1) % BASES.length;
-    BASES[baseIdx].layer.addTo(map);
-    BASES[baseIdx].layer.bringToBack();
-    baseBtn.textContent = '🗺️ 地図: ' + BASES[baseIdx].label;
-    baseBtn.classList.toggle('on', baseIdx !== 0);
+  function setBase(i) {
+    if (!BASES[i].layer) return false;
+    if (activeBase) map.removeLayer(activeBase);
+    baseIdx = i;
+    activeBase = BASES[i].layer;
+    activeBase.addTo(map);
+    if (activeBase.bringToBack) activeBase.bringToBack();
+    baseBtn.textContent = '🗺️ 地図: ' + BASES[i].label;
+    baseBtn.classList.toggle('on', i > 1);
     redrawLines();
+    return true;
+  }
+
+  // Label-free road/rail map: OpenFreeMap's style with every text/icon layer removed.
+  setBase(1);
+  fetch('https://tiles.openfreemap.org/styles/liberty')
+    .then(function (res) { if (!res.ok) throw new Error('style'); return res.json(); })
+    .then(function (style) {
+      style.layers = style.layers.filter(function (l) { return l.type !== 'symbol'; });
+      BASES[0].layer = L.maplibreGL({ style: style, attribution: VECTOR_ATTR, maxZoom: 18 });
+      if (!baseTouched) setBase(0);
+    })
+    .catch(function () { /* stay on the aerial photo */ });
+
+  baseBtn.addEventListener('click', function () {
+    baseTouched = true;
+    var i = baseIdx;
+    do { i = (i + 1) % BASES.length; } while (!BASES[i].layer);
+    setBase(i);
   });
 
   var highlight = true;
@@ -472,8 +499,8 @@
   function redrawLines() {
     lineLayer.clearLayers();
     if (!prefData || stage === 'select') return;
-    var onPhoto = baseIdx === 0;
-    var base = { color: onPhoto ? '#fde68a' : '#6b7280', weight: 2.5, opacity: onPhoto ? 0.9 : 0.85 };
+    var onPhoto = baseIdx === 1;
+    var base = { color: onPhoto ? '#fde68a' : '#2563eb', weight: 3, opacity: 0.9 };
     var active = scopeLine >= 0 ? scopeLine : null;
     var hl = current && highlight ? current.lineIdx : null;
     var draw = function (li, style, withTip) {
