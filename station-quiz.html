@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>町名位置クイズ - 日本地図</title>
+<title>駅位置クイズ - 日本地図</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
 <style>
   :root {
@@ -13,7 +13,7 @@
     --ink: #eef2fb;
     --sub-ink: #93a2c2;
     --accent: #34d399;
-    --accent-2: #f472b6;
+    --accent-2: #2dd4bf;
     --bad: #f87171;
     --warn: #fbbf24;
   }
@@ -33,9 +33,9 @@
   nav.crosslink { margin-top: 8px; display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
   nav.crosslink a {
     color: var(--accent-2); text-decoration: none; font-size: .78rem;
-    border: 1px solid #4a2340; padding: 4px 10px; border-radius: 999px;
+    border: 1px solid #1d4a47; padding: 4px 10px; border-radius: 999px;
   }
-  nav.crosslink a:hover { background: rgba(244,114,182,.12); }
+  nav.crosslink a:hover { background: rgba(45,212,191,.12); }
 
   main.layout {
     flex: 1; display: flex; gap: 16px; padding: 8px 16px 16px;
@@ -54,21 +54,21 @@
   .sign-card { text-align: center; }
   .sign-card .label { font-size: .78rem; color: var(--sub-ink); margin-bottom: 8px; letter-spacing: .05em; }
   .sign-board {
-    background: linear-gradient(160deg, #2a1330, #3a1b45);
-    border: 3px solid #7a3a75;
+    background: linear-gradient(160deg, #0f2a2a, #123a38);
+    border: 3px solid #2a7a74;
     border-radius: 10px;
     padding: 22px 10px;
     position: relative;
   }
-  .sign-board::before { content: "\1F4CD"; position: absolute; top: 8px; left: 12px; font-size: 1rem; opacity: .6; }
-  .town-name {
-    font-size: 2.1rem; font-weight: 700; letter-spacing: .03em; color: #fbcfe8;
-    text-shadow: 0 0 18px rgba(244,114,182,.3); word-break: keep-all;
+  .sign-board::before { content: "\1F689"; position: absolute; top: 8px; left: 12px; font-size: 1rem; opacity: .6; }
+  .station-name {
+    font-size: 2.1rem; font-weight: 700; letter-spacing: .03em; color: #99f6e4;
+    text-shadow: 0 0 18px rgba(45,212,191,.3); word-break: keep-all;
   }
-  .sign-card .hint-city { margin-top: 8px; font-size: .8rem; color: var(--sub-ink); }
-  .sign-card .city-tag {
+  .sign-card .hint-line { margin-top: 8px; font-size: .8rem; color: var(--sub-ink); line-height: 1.5; }
+  .sign-card .scope-tag {
     display: inline-block; margin-top: 6px; font-size: .72rem; color: var(--accent-2);
-    border: 1px solid #7a3a75; border-radius: 999px; padding: 2px 10px;
+    border: 1px solid #2a7a74; border-radius: 999px; padding: 2px 10px;
   }
 
   .feedback {
@@ -98,8 +98,8 @@
   }
   button:hover { background: #253253; }
   button:active { transform: scale(.97); }
-  button.primary { background: var(--accent-2); color: #2a0a1c; border-color: var(--accent-2); font-weight: 700; }
-  button.primary:hover { background: #f9a8d4; }
+  button.primary { background: var(--accent-2); color: #042f2c; border-color: var(--accent-2); font-weight: 700; }
+  button.primary:hover { background: #5eead4; }
   button:disabled { opacity: .4; cursor: not-allowed; }
   button.toggle.on { border-color: var(--accent-2); color: var(--accent-2); }
 
@@ -111,7 +111,7 @@
   footer a { color: var(--sub-ink); }
 
   .leaflet-container { font-family: inherit; }
-  .guess-tip, .actual-tip {
+  .guess-tip, .actual-tip, .line-tip {
     font-weight: 700; font-size: .8rem; padding: 2px 8px; border-radius: 6px; border: none;
     box-shadow: 0 2px 6px rgba(0,0,0,.35);
   }
@@ -157,12 +157,12 @@
 
 <div class="start-overlay" id="startOverlay">
   <div class="start-card">
-    <h2>🏘️ 町名位置クイズ</h2>
-    <p>市区町村を選んで、表示された町名（例: 高松市の松縄町）の場所を地図上でクリックして当てよう</p>
+    <h2>🚉 駅位置クイズ</h2>
+    <p>表示された駅の場所を、路線が描かれた地図上でクリックして当てよう</p>
     <label for="prefSelect">都道府県</label>
     <select id="prefSelect"><option value="">選択してください</option></select>
-    <label for="citySelect">市区町村</label>
-    <select id="citySelect" disabled><option value="">先に都道府県を選んでください</option></select>
+    <label for="lineSelect">路線</label>
+    <select id="lineSelect" disabled><option value="">先に都道府県を選んでください</option></select>
     <div class="load-msg" id="loadMsg"></div>
     <div class="count-grid">
       <button type="button" data-count="1" disabled>1問</button>
@@ -171,13 +171,13 @@
       <button type="button" data-count="all" class="primary" id="countAllBtn" disabled>全部</button>
     </div>
     <p class="progress-note" id="progressNote">&nbsp;</p>
-    <button type="button" class="back-link" id="resetProgressBtn">🔄 この市区町村の高得点記録をリセット</button>
+    <button type="button" class="back-link" id="resetProgressBtn">🔄 この範囲の高得点記録をリセット</button>
   </div>
 </div>
 
 <header>
-  <h1><span class="icon">🏘️</span>町名位置クイズ</h1>
-  <p>市区町村内の町名がどこにあるか、地図をクリックして当ててね（近いほど高得点！）</p>
+  <h1><span class="icon">🚉</span>駅位置クイズ</h1>
+  <p>駅名の場所を、路線を見ながら地図クリックで当ててね（近いほど高得点！）</p>
   <nav class="crosslink">
     <a href="index.html">🏠 トップへ</a>
     <a href="area-code-quiz.html">📞 市外局番クイズ</a>
@@ -185,7 +185,7 @@
     <a href="municipality-quiz.html">🗾 市区町村クイズ</a>
     <a href="pref-municipality-quiz.html">📍 都道府県内市区町村位置クイズ</a>
     <a href="sapporo-ward-quiz.html">🏙️ 札幌市 区クイズ</a>
-    <a href="station-quiz.html">🚉 駅位置クイズ</a>
+    <a href="town-location-quiz.html">🏘️ 町名位置クイズ</a>
   </nav>
 </header>
 
@@ -196,12 +196,12 @@
 
   <aside class="panel">
     <div class="card sign-card">
-      <div class="label">この町名はどこ？</div>
+      <div class="label">この駅はどこ？</div>
       <div class="sign-board">
-        <div class="town-name" id="townName">---</div>
+        <div class="station-name" id="stationName">---</div>
       </div>
-      <div class="hint-city" id="hintCity">&nbsp;</div>
-      <div class="city-tag" id="cityTag" style="display:none;"></div>
+      <div class="hint-line" id="hintLine">&nbsp;</div>
+      <div class="scope-tag" id="scopeTag" style="display:none;"></div>
     </div>
 
     <div class="card">
@@ -224,7 +224,10 @@
         <button id="nextBtn" class="primary" disabled>次へ</button>
       </div>
       <div class="controls">
-        <button id="labelBtn" class="toggle" type="button">🏷️ 地名ラベル（ヒント）: OFF</button>
+        <button id="hlBtn" class="toggle on" type="button">🛤️ 出題路線を強調: ON</button>
+      </div>
+      <div class="controls">
+        <button id="baseBtn" class="toggle" type="button">🗺️ 地図: 航空写真</button>
       </div>
       <div class="controls">
         <button id="endBtn">終了して結果を見る</button>
@@ -242,8 +245,8 @@
 </main>
 
 <footer>
-  町名データ: <a href="https://github.com/geolonia/japanese-addresses" target="_blank" rel="noopener">geolonia/japanese-addresses</a>（国土交通省 位置参照情報） /
-  地図: <a href="https://maps.gsi.go.jp/development/ichiran.html" target="_blank" rel="noopener">国土地理院 地理院タイル</a>（全国最新写真・標準地図）
+  駅・路線データ: <a href="https://nlftp.mlit.go.jp/ksj/gml/datalist/KsjTmplt-N02-v3_1.html" target="_blank" rel="noopener">国土数値情報（鉄道データ）</a>（国土交通省）を加工して作成 /
+  地図: <a href="https://maps.gsi.go.jp/development/ichiran.html" target="_blank" rel="noopener">国土地理院 地理院タイル</a>
 </footer>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
@@ -258,19 +261,21 @@
     ['36','徳島県'],['37','香川県'],['38','愛媛県'],['39','高知県'],['40','福岡県'],['41','佐賀県'],['42','長崎県'],
     ['43','熊本県'],['44','大分県'],['45','宮崎県'],['46','鹿児島県'],['47','沖縄県']
   ];
+  var SCORE_SCALE_M = 2500;   // score = 100 * exp(-distance / scale)
+  var CORRECT_THRESHOLD = 90; // ~260 m or closer counts as "known"
 
   var startOverlay = document.getElementById('startOverlay');
   var prefSelect = document.getElementById('prefSelect');
-  var citySelect = document.getElementById('citySelect');
+  var lineSelect = document.getElementById('lineSelect');
   var loadMsg = document.getElementById('loadMsg');
   var countAllBtn = document.getElementById('countAllBtn');
   var countButtons = startOverlay.querySelectorAll('button[data-count]');
   var progressNoteEl = document.getElementById('progressNote');
   var resetProgressBtn = document.getElementById('resetProgressBtn');
 
-  var townNameEl = document.getElementById('townName');
-  var hintCityEl = document.getElementById('hintCity');
-  var cityTagEl = document.getElementById('cityTag');
+  var stationNameEl = document.getElementById('stationName');
+  var hintLineEl = document.getElementById('hintLine');
+  var scopeTagEl = document.getElementById('scopeTag');
   var feedbackEl = document.getElementById('feedback');
   var scoreNEl = document.getElementById('scoreN');
   var answeredNEl = document.getElementById('answeredN');
@@ -279,7 +284,8 @@
   var progressFillEl = document.getElementById('progressFill');
   var skipBtn = document.getElementById('skipBtn');
   var nextBtn = document.getElementById('nextBtn');
-  var labelBtn = document.getElementById('labelBtn');
+  var hlBtn = document.getElementById('hlBtn');
+  var baseBtn = document.getElementById('baseBtn');
   var endBtn = document.getElementById('endBtn');
   var restartBtn = document.getElementById('restartBtn');
   var summaryCard = document.getElementById('summaryCard');
@@ -294,35 +300,44 @@
     prefSelect.appendChild(opt);
   });
 
-  // ---- map: aerial photo by default (no labels), GSI standard map as an optional label hint ----
-  var map = L.map('map', { zoomSnap: 0.5, zoomDelta: 0.5, wheelPxPerZoomLevel: 90 }).setView([36.2, 138.0], 5);
-  var plainLayer = L.tileLayer('https://cyberjapandata.gsi.go.jp/xyz/seamlessphoto/{z}/{x}/{y}.jpg', {
-    maxZoom: 18,
-    attribution: '<a href="https://maps.gsi.go.jp/development/ichiran.html">地理院タイル（全国最新写真）</a>'
-  });
-  var labelLayer = L.tileLayer('https://cyberjapandata.gsi.go.jp/xyz/std/{z}/{x}/{y}.png', {
-    maxZoom: 18,
-    attribution: '<a href="https://maps.gsi.go.jp/development/ichiran.html">地理院タイル（標準地図）</a>'
-  });
-  var labelsOn = false;
-  plainLayer.addTo(map);
+  // ---- map ----
+  var map = L.map('map', { zoomSnap: 0.5, zoomDelta: 0.5, wheelPxPerZoomLevel: 90, preferCanvas: true }).setView([36.2, 138.0], 5);
+  var GSI = '<a href="https://maps.gsi.go.jp/development/ichiran.html">地理院タイル</a>';
+  var BASES = [
+    { label: '航空写真', layer: L.tileLayer('https://cyberjapandata.gsi.go.jp/xyz/seamlessphoto/{z}/{x}/{y}.jpg', { maxZoom: 18, attribution: GSI + '（全国最新写真）' }) },
+    { label: '白地図', layer: L.tileLayer('https://cyberjapandata.gsi.go.jp/xyz/blank/{z}/{x}/{y}.png', { maxZoom: 18, maxNativeZoom: 14, attribution: GSI + '（白地図）' }) },
+    { label: '標準地図（駅名あり・ヒント）', layer: L.tileLayer('https://cyberjapandata.gsi.go.jp/xyz/std/{z}/{x}/{y}.png', { maxZoom: 18, attribution: GSI + '（標準地図）' }) }
+  ];
+  var baseIdx = 0;
+  BASES[0].layer.addTo(map);
+  var lineLayer = L.layerGroup().addTo(map);
   var markerLayer = L.layerGroup().addTo(map);
 
-  labelBtn.addEventListener('click', function () {
-    labelsOn = !labelsOn;
-    if (labelsOn) { map.removeLayer(plainLayer); labelLayer.addTo(map); }
-    else { map.removeLayer(labelLayer); plainLayer.addTo(map); }
-    labelBtn.textContent = '🏷️ 地名ラベル（ヒント）: ' + (labelsOn ? 'ON' : 'OFF');
-    labelBtn.classList.toggle('on', labelsOn);
+  baseBtn.addEventListener('click', function () {
+    map.removeLayer(BASES[baseIdx].layer);
+    baseIdx = (baseIdx + 1) % BASES.length;
+    BASES[baseIdx].layer.addTo(map);
+    BASES[baseIdx].layer.bringToBack();
+    baseBtn.textContent = '🗺️ 地図: ' + BASES[baseIdx].label;
+    baseBtn.classList.toggle('on', baseIdx !== 0);
+    redrawLines();
+  });
+
+  var highlight = true;
+  hlBtn.addEventListener('click', function () {
+    highlight = !highlight;
+    hlBtn.textContent = '🛤️ 出題路線を強調: ' + (highlight ? 'ON' : 'OFF');
+    hlBtn.classList.toggle('on', highlight);
+    redrawLines();
   });
 
   // ---- state ----
   var prefCache = {};
-  var cityList = [];
-  var selectedCity = null;   // {code, name, towns:[[name,lat,lon],...]}
-  var selectedPrefName = '';
-  var cityBounds = null;
-  var cityDiag = 1;
+  var prefData = null;       // {code,name,lines:[[name,operator,[flat...]]],stations:[[name,lat,lon,[lineIdx],id]]}
+  var scopeLine = -1;        // -1 = all stations in the prefecture
+  var scopeLabel = '';
+  var scopeStations = [];
+  var scopeBounds = null;
   var queue = [];
   var idx = 0;
   var totalScore = 0;
@@ -332,11 +347,9 @@
   var stage = 'select'; // select | playing | summary
 
   // ---- correct tracking: a near-perfect guess (score >= 90) is excluded
-  // from that city's pool until it's fully cleared or reset.
-  var CORRECT_KEY = 'townquiz-correct-v1';
-  var CORRECT_THRESHOLD = 90;
+  // from the pool until the whole scope is cleared, or it's reset.
+  var CORRECT_KEY = 'stationquiz-correct-v1';
   var CORRECT = loadCorrect();
-
   function loadCorrect() {
     try {
       var raw = window.localStorage.getItem(CORRECT_KEY);
@@ -346,13 +359,21 @@
   function saveCorrect() {
     try { window.localStorage.setItem(CORRECT_KEY, JSON.stringify(CORRECT)); } catch (e) {}
   }
-  function correctKey(t) { return selectedCity.code + ':' + t[0]; }
+
+  function lineName(i) { return prefData.lines[i][1] + ' ' + prefData.lines[i][0]; }
+
+  function currentScopeStations() {
+    if (!prefData) return [];
+    if (scopeLine < 0) return prefData.stations;
+    return prefData.stations.filter(function (s) { return s[3].indexOf(scopeLine) !== -1; });
+  }
 
   function updateProgressNote() {
-    if (!selectedCity) { progressNoteEl.textContent = ' '; return; }
-    var done = selectedCity.towns.filter(function (t) { return CORRECT[correctKey(t)]; }).length;
+    var pool = currentScopeStations();
+    if (!pool.length) { progressNoteEl.textContent = ' '; return; }
+    var done = pool.filter(function (s) { return CORRECT[s[4]]; }).length;
     progressNoteEl.textContent = done > 0
-      ? ('✅ 高得点済み ' + done + '/' + selectedCity.towns.length + '件は、出し切るかリセットするまで出題されません')
+      ? ('✅ 高得点済み ' + done + '/' + pool.length + '駅は、出し切るかリセットするまで出題されません')
       : ' ';
   }
 
@@ -365,70 +386,75 @@
     return a;
   }
 
-  // ---- start overlay: prefecture -> city -> count ----
+  // ---- start overlay: prefecture -> line -> count ----
   function setCountEnabled(on) {
     Array.prototype.forEach.call(countButtons, function (b) { b.disabled = !on; });
   }
 
+  function refreshCountButtons() {
+    var n = currentScopeStations().length;
+    countAllBtn.textContent = '全' + n + '駅';
+    setCountEnabled(n > 0);
+    updateProgressNote();
+  }
+
   prefSelect.addEventListener('change', function () {
     var code = prefSelect.value;
-    selectedCity = null;
+    prefData = null;
+    scopeLine = -1;
     setCountEnabled(false);
     updateProgressNote();
-    citySelect.innerHTML = '';
-    citySelect.disabled = true;
+    lineSelect.innerHTML = '';
+    lineSelect.disabled = true;
     if (!code) {
-      citySelect.innerHTML = '<option value="">先に都道府県を選んでください</option>';
+      lineSelect.innerHTML = '<option value="">先に都道府県を選んでください</option>';
       return;
     }
-    loadMsg.textContent = '町名データを読み込み中…';
+    loadMsg.textContent = '駅・路線データを読み込み中…';
     var done = function (data) {
       if (prefSelect.value !== code) return;
-      selectedPrefName = data.name;
-      cityList = data.cities;
-      citySelect.innerHTML = '<option value="">選択してください</option>';
-      cityList.forEach(function (c, i) {
+      prefData = data;
+      var counts = data.lines.map(function () { return 0; });
+      data.stations.forEach(function (s) { s[3].forEach(function (li) { counts[li]++; }); });
+      var order = data.lines.map(function (_, i) { return i; })
+        .filter(function (i) { return counts[i] >= 2; })
+        .sort(function (a, b) { return counts[b] - counts[a]; });
+      lineSelect.innerHTML = '<option value="-1">県内のすべての駅（' + data.stations.length + '駅）</option>';
+      order.forEach(function (i) {
         var opt = document.createElement('option');
         opt.value = String(i);
-        opt.textContent = c.name + '（' + c.towns.length + '）';
-        citySelect.appendChild(opt);
+        opt.textContent = lineName(i) + '（' + counts[i] + '駅）';
+        lineSelect.appendChild(opt);
       });
-      citySelect.disabled = false;
+      lineSelect.disabled = false;
       loadMsg.textContent = '';
+      scopeLine = -1;
+      refreshCountButtons();
     };
     if (prefCache[code]) { done(prefCache[code]); return; }
-    fetch('town-data/' + code + '.json')
+    fetch('station-data/' + code + '.json')
       .then(function (res) { if (!res.ok) throw new Error('load failed'); return res.json(); })
       .then(function (data) { prefCache[code] = data; done(data); })
       .catch(function () {
         loadMsg.textContent = '読み込みに失敗しました。もう一度お試しください。';
-        citySelect.innerHTML = '<option value="">読み込み失敗</option>';
+        lineSelect.innerHTML = '<option value="">読み込み失敗</option>';
       });
   });
 
-  citySelect.addEventListener('change', function () {
-    if (citySelect.value === '') {
-      selectedCity = null;
-      setCountEnabled(false);
-      updateProgressNote();
-      return;
-    }
-    selectedCity = cityList[parseInt(citySelect.value, 10)];
-    countAllBtn.textContent = '全' + selectedCity.towns.length + '町名';
-    setCountEnabled(true);
-    updateProgressNote();
+  lineSelect.addEventListener('change', function () {
+    scopeLine = parseInt(lineSelect.value, 10);
+    refreshCountButtons();
   });
 
   resetProgressBtn.addEventListener('click', function () {
-    if (!selectedCity) return;
-    selectedCity.towns.forEach(function (t) { delete CORRECT[correctKey(t)]; });
+    currentScopeStations().forEach(function (s) { delete CORRECT[s[4]]; });
     saveCorrect();
     updateProgressNote();
   });
 
   Array.prototype.forEach.call(countButtons, function (btn) {
     btn.addEventListener('click', function () {
-      if (!selectedCity) return;
+      if (!prefData) return;
       var raw = btn.getAttribute('data-count');
       startOverlay.classList.add('hidden');
       startGame(raw === 'all' ? 'all' : parseInt(raw, 10));
@@ -442,41 +468,63 @@
     updateProgressNote();
   }
 
-  // ---- game ----
-  function computeCityGeometry() {
-    var pts = selectedCity.towns.map(function (t) { return L.latLng(t[1], t[2]); });
-    cityBounds = L.latLngBounds(pts);
-    var diag = cityBounds.getSouthWest().distanceTo(cityBounds.getNorthEast());
-    cityDiag = Math.max(diag, 4000);
+  // ---- lines ----
+  function redrawLines() {
+    lineLayer.clearLayers();
+    if (!prefData || stage === 'select') return;
+    var onPhoto = baseIdx === 0;
+    var base = { color: onPhoto ? '#fde68a' : '#6b7280', weight: 2.5, opacity: onPhoto ? 0.9 : 0.85 };
+    var active = scopeLine >= 0 ? scopeLine : null;
+    var hl = current && highlight ? current.lineIdx : null;
+    var draw = function (li, style, withTip) {
+      var l = prefData.lines[li];
+      l[2].forEach(function (flat) {
+        var latlngs = [];
+        for (var i = 0; i < flat.length; i += 2) latlngs.push([flat[i], flat[i + 1]]);
+        var pl = L.polyline(latlngs, style);
+        if (withTip) pl.bindTooltip(lineName(li), { sticky: true, className: 'line-tip' });
+        lineLayer.addLayer(pl);
+      });
+    };
+    prefData.lines.forEach(function (_, li) { if (li !== hl) draw(li, base, true); });
+    if (hl !== null) draw(hl, { color: '#f472b6', weight: 5, opacity: 1 }, true);
   }
 
-  function fitCity() {
+  // ---- game ----
+  function computeScopeBounds() {
+    var pts = scopeStations.map(function (s) { return L.latLng(s[1], s[2]); });
+    scopeBounds = L.latLngBounds(pts);
+  }
+
+  function fitScope() {
     map.invalidateSize();
-    map.fitBounds(cityBounds.pad(0.08), { animate: false, maxZoom: 15 });
+    map.fitBounds(scopeBounds.pad(0.1), { animate: false, maxZoom: 14 });
   }
 
   function startGame(count) {
     stage = 'playing';
-    computeCityGeometry();
+    scopeStations = currentScopeStations();
+    scopeLabel = scopeLine < 0 ? prefData.name : lineName(scopeLine);
+    computeScopeBounds();
 
-    var pool = selectedCity.towns;
-    var remaining = pool.filter(function (t) { return !CORRECT[correctKey(t)]; });
+    var remaining = scopeStations.filter(function (s) { return !CORRECT[s[4]]; });
     if (remaining.length === 0) {
-      pool.forEach(function (t) { delete CORRECT[correctKey(t)]; });
+      scopeStations.forEach(function (s) { delete CORRECT[s[4]]; });
       saveCorrect();
-      remaining = pool;
+      remaining = scopeStations;
     }
     var shuffled = shuffle(remaining);
     queue = (count === 'all' || !count) ? shuffled : shuffled.slice(0, Math.min(count, shuffled.length));
     idx = 0;
     totalScore = 0;
     answered = 0;
+    current = null;
     summaryCard.style.display = 'none';
     skipBtn.disabled = false;
     endBtn.disabled = false;
     nextBtn.disabled = true;
-    cityTagEl.style.display = '';
-    cityTagEl.textContent = selectedPrefName + ' ' + selectedCity.name;
+    scopeTagEl.style.display = '';
+    scopeTagEl.textContent = scopeLine < 0 ? prefData.name : prefData.name + ' ' + lineName(scopeLine);
     setTimeout(function () { nextQuestion(); }, 0);
   }
 
@@ -494,16 +542,18 @@
       showSummary();
       return;
     }
-    var t = queue[idx];
+    var s = queue[idx];
     idx++;
-    current = { name: t[0], lat: t[1], lon: t[2] };
-    townNameEl.textContent = current.name;
-    hintCityEl.textContent = selectedCity.name;
+    var lineIdx = scopeLine >= 0 ? scopeLine : s[3][0];
+    current = { id: s[4], name: s[0], lat: s[1], lon: s[2], lineIdx: lineIdx, lineCount: s[3].length };
+    stationNameEl.textContent = current.name + '駅';
+    hintLineEl.textContent = lineName(lineIdx) + (current.lineCount > 1 && scopeLine < 0 ? ' ほか' : '');
     feedbackEl.textContent = '地図をクリックして解答してね';
     feedbackEl.className = 'feedback idle';
     nextBtn.disabled = true;
     skipBtn.disabled = false;
-    fitCity();
+    fitScope();
+    redrawLines();
     updateStats();
     locked = false;
   }
@@ -526,12 +576,6 @@
     return m;
   }
 
-  function showActual(extra) {
-    var actual = L.latLng(current.lat, current.lon);
-    markerLayer.addLayer(dot(actual, '#ef4444', current.name, 'actual-tip'));
-    return actual;
-  }
-
   map.on('click', function (e) {
     if (stage !== 'playing' || locked || !current) return;
     locked = true;
@@ -539,20 +583,20 @@
 
     var actual = L.latLng(current.lat, current.lon);
     var dist = e.latlng.distanceTo(actual);
-    var scoreVal = Math.round(Math.max(0, 100 * Math.exp(-4 * dist / cityDiag)));
+    var scoreVal = Math.round(Math.max(0, 100 * Math.exp(-dist / SCORE_SCALE_M)));
     totalScore += scoreVal;
     if (scoreVal >= CORRECT_THRESHOLD) {
-      CORRECT[selectedCity.code + ':' + current.name] = true;
+      CORRECT[current.id] = true;
       saveCorrect();
     }
 
     var tier = scoreTier(scoreVal);
-    feedbackEl.textContent = tier.label + ' ' + current.name + ' はここでした。（' + scoreVal + '点・約' + formatDist(dist) + 'ズレ）';
+    feedbackEl.textContent = tier.label + ' ' + current.name + '駅 はここでした。（' + scoreVal + '点・約' + formatDist(dist) + 'ズレ）';
     feedbackEl.className = 'feedback ' + tier.cls;
 
     markerLayer.addLayer(L.polyline([e.latlng, actual], { color: '#fbbf24', weight: 3, dashArray: '6 6' }));
     markerLayer.addLayer(dot(e.latlng, '#38bdf8', 'あなたの解答', 'guess-tip'));
-    markerLayer.addLayer(dot(actual, '#ef4444', current.name, 'actual-tip'));
+    markerLayer.addLayer(dot(actual, '#ef4444', current.name + '駅', 'actual-tip'));
     map.fitBounds(L.latLngBounds([e.latlng, actual]).pad(0.6), { maxZoom: 16 });
 
     skipBtn.disabled = true;
@@ -563,8 +607,9 @@
   function handleSkip() {
     if (stage !== 'playing' || locked || !current) return;
     locked = true;
-    var actual = showActual();
-    feedbackEl.textContent = '⏭️ スキップ： ' + current.name + ' はここでした。';
+    var actual = L.latLng(current.lat, current.lon);
+    markerLayer.addLayer(dot(actual, '#ef4444', current.name + '駅', 'actual-tip'));
+    feedbackEl.textContent = '⏭️ スキップ： ' + current.name + '駅 はここでした。';
     feedbackEl.className = 'feedback skip';
     map.setView(actual, Math.max(map.getZoom(), 14));
     skipBtn.disabled = true;
@@ -575,23 +620,25 @@
   function showSummary() {
     stage = 'summary';
     locked = true;
+    current = null;
     updateStats();
     summaryCard.style.display = 'block';
     var avg = answered ? Math.round(totalScore / answered) : 0;
     summaryScoreEl.textContent = totalScore + '点';
     var msg;
     if (answered === 0) msg = 'まだ解答していません。';
-    else if (avg >= 85) msg = '完璧！' + selectedCity.name + 'マスターです！';
+    else if (avg >= 85) msg = '完璧！' + scopeLabel + 'マスターです！';
     else if (avg >= 60) msg = 'お見事！かなり詳しいですね。';
     else if (avg >= 35) msg = 'まずまず！もう一周してみよう。';
     else msg = 'まだまだ伸びしろあり！復習してみよう。';
     summaryMsgEl.textContent = msg + '（平均 ' + avg + '点 / ' + answered + '問中）';
-    townNameEl.textContent = '✓';
-    hintCityEl.textContent = 'クイズ終了';
+    stationNameEl.textContent = '✓';
+    hintLineEl.textContent = 'クイズ終了';
     skipBtn.disabled = true;
     nextBtn.disabled = true;
     endBtn.disabled = true;
-    fitCity();
+    fitScope();
+    redrawLines();
   }
 
   skipBtn.addEventListener('click', handleSkip);
@@ -604,8 +651,8 @@
     markerLayer.clearLayers();
     showSummary();
   });
-  restartBtn.addEventListener('click', showStartOverlay);
-  playAgainBtn.addEventListener('click', showStartOverlay);
+  restartBtn.addEventListener('click', function () { lineLayer.clearLayers(); markerLayer.clearLayers(); showStartOverlay(); });
+  playAgainBtn.addEventListener('click', function () { lineLayer.clearLayers(); markerLayer.clearLayers(); showStartOverlay(); });
 
   showStartOverlay();
 })();
