@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>電柱クイズ - 電力会社を当てる</title>
+<style>
+  :root {
+    --bg: #0f172a;
+    --panel-bg: #131c31;
+    --panel-bg-2: #1b2740;
+    --ink: #eef2fb;
+    --sub-ink: #93a2c2;
+    --accent: #f59e0b;
+    --good: #34d399;
+    --bad: #f87171;
+    --warn: #fbbf24;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0; background: var(--bg); color: var(--ink);
+    font-family: "Hiragino Sans", "Yu Gothic", "Noto Sans JP", -apple-system, BlinkMacSystemFont, sans-serif;
+    min-height: 100%;
+  }
+  body { display: flex; flex-direction: column; min-height: 100vh; }
+  header { padding: 14px 20px 8px; text-align: center; }
+  header h1 { margin: 0 0 4px; font-size: 1.4rem; }
+  header p { margin: 0; color: var(--sub-ink); font-size: .85rem; }
+  nav.crosslink { margin-top: 8px; display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
+  nav.crosslink a {
+    color: var(--accent); text-decoration: none; font-size: .78rem;
+    border: 1px solid #5b3b0a; padding: 4px 10px; border-radius: 999px;
+  }
+  nav.crosslink a:hover { background: rgba(245,158,11,.12); }
+
+  main { flex: 1; width: 100%; max-width: 900px; margin: 0 auto; padding: 8px 16px 20px; display: flex; flex-direction: column; gap: 12px; }
+  .card { background: var(--panel-bg); border-radius: 16px; padding: 16px; box-shadow: 0 4px 24px rgba(0,0,0,.25); }
+
+  .stats { display: flex; justify-content: space-between; gap: 8px; }
+  .stat { flex: 1; text-align: center; }
+  .stat .n { font-size: 1.3rem; font-weight: 700; }
+  .stat .l { font-size: .72rem; color: var(--sub-ink); }
+  .progress-bar { height: 6px; border-radius: 4px; background: #263250; overflow: hidden; margin-top: 10px; }
+  .progress-bar > div { height: 100%; background: var(--accent); width: 0%; transition: width .25s; }
+
+  .q-tag { display: inline-block; font-size: .72rem; color: var(--accent); border: 1px solid #5b3b0a; border-radius: 999px; padding: 2px 10px; margin-bottom: 8px; }
+  .q-visual { max-width: 330px; margin: 0 auto 10px; }
+  .q-visual svg { width: 100%; height: auto; display: block; border-radius: 10px; }
+  .q-visual .cap { font-size: .68rem; color: var(--sub-ink); text-align: center; margin-top: 3px; }
+  .q-prompt { font-size: 1.05rem; line-height: 1.6; font-weight: 600; text-align: center; }
+  .q-ask { margin-top: 6px; font-size: .85rem; color: var(--sub-ink); text-align: center; }
+
+  .choices { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; }
+  .choices button { padding: 12px 4px; font-size: .86rem; }
+  .choices button.correct { background: rgba(52,211,153,.2); border-color: var(--good); color: var(--good); font-weight: 700; }
+  .choices button.wrong { background: rgba(248,113,113,.2); border-color: var(--bad); color: var(--bad); }
+
+  .feedback { min-height: 46px; font-size: .9rem; line-height: 1.6; border-radius: 10px; padding: 10px 12px; }
+  .feedback.ok { background: rgba(52,211,153,.15); color: var(--good); }
+  .feedback.bad { background: rgba(248,113,113,.15); color: var(--bad); }
+  .feedback.idle { color: var(--sub-ink); }
+  .feedback .exp { display: block; margin-top: 4px; color: var(--ink); }
+
+  .controls { display: flex; gap: 10px; }
+  .controls + .controls { margin-top: 10px; }
+  button {
+    flex: 1; font: inherit; font-size: .85rem; padding: 10px 8px; border-radius: 10px;
+    border: 1px solid #2a3a5c; background: var(--panel-bg-2); color: var(--ink);
+    cursor: pointer; transition: background .15s, transform .1s;
+  }
+  button:hover:not(:disabled) { background: #253253; }
+  button:active:not(:disabled) { transform: scale(.97); }
+  button.primary { background: var(--accent); color: #2a1a02; border-color: var(--accent); font-weight: 700; }
+  button.primary:hover:not(:disabled) { background: #fbbf24; }
+  button:disabled { opacity: .4; cursor: not-allowed; }
+
+  .summary { text-align: center; }
+  .summary .big { font-size: 2.2rem; font-weight: 700; color: var(--accent); margin: 6px 0; }
+  .summary .msg { color: var(--sub-ink); font-size: .85rem; margin-bottom: 12px; }
+
+  footer { text-align: center; padding: 10px; font-size: .7rem; color: var(--sub-ink); }
+  footer a { color: var(--sub-ink); }
+
+  @media (max-width: 640px) { .choices { grid-template-columns: repeat(2, 1fr); } }
+
+  .start-overlay {
+    position: fixed; inset: 0; z-index: 50; background: rgba(15,23,42,.9);
+    display: flex; align-items: center; justify-content: center; padding: 20px;
+  }
+  .start-overlay.hidden { display: none; }
+  .start-card {
+    background: var(--panel-bg); border-radius: 20px; padding: 30px 26px;
+    max-width: 440px; width: 100%; text-align: center; box-shadow: 0 12px 48px rgba(0,0,0,.5);
+  }
+  .start-card h2 { margin: 0 0 8px; font-size: 1.25rem; }
+  .start-card > p { margin: 0 0 18px; color: var(--sub-ink); font-size: .85rem; line-height: 1.5; }
+  .start-card label { display: block; text-align: left; font-size: .78rem; color: var(--sub-ink); margin: 12px 0 6px; }
+  select {
+    width: 100%; font: inherit; font-size: .95rem; padding: 10px; border-radius: 10px;
+    border: 1px solid #2a3a5c; background: var(--panel-bg-2); color: var(--ink);
+  }
+  .count-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 18px; }
+  .count-grid button { padding: 16px 8px; font-size: 1rem; }
+  .progress-note { margin: 14px 0 0; font-size: .72rem; color: var(--sub-ink); line-height: 1.5; min-height: 1.5em; }
+  .back-link {
+    display: inline-block; margin-top: 8px; font-size: .78rem; color: var(--sub-ink); flex: none;
+    text-decoration: underline; cursor: pointer; background: none; border: none; padding: 0;
+  }
+  .back-link:hover:not(:disabled) { background: none; }
+  .start-links { margin-top: 10px; font-size: .78rem; }
+  .start-links a { color: var(--accent); }
+</style>
+</head>
+<body>
+
+<div class="start-overlay" id="startOverlay">
+  <div class="start-card">
+    <h2>⚡ 電柱クイズ</h2>
+    <p>電柱の札や部品の特徴から、どの電力会社かを当てよう（GeoGuessr日本の地域推定の勉強用）</p>
+    <label for="typeSelect">出題タイプ</label>
+    <select id="typeSelect">
+      <option value="image">画像問題（札・標識）</option>
+      <option value="text">特徴の文章問題（腕金・変圧器など）</option>
+      <option value="area">管轄の例外（新潟・山梨など）</option>
+      <option value="all">すべて</option>
+    </select>
+    <div class="count-grid">
+      <button type="button" data-count="1">1問</button>
+      <button type="button" data-count="5">5問</button>
+      <button type="button" data-count="10">10問</button>
+      <button type="button" data-count="all" class="primary" id="countAllBtn">全部</button>
+    </div>
+    <p class="progress-note" id="progressNote">&nbsp;</p>
+    <button type="button" class="back-link" id="resetProgressBtn">🔄 このタイプの正解記録をリセット</button>
+    <div class="start-links"><a href="power-pole-notes.html">📒 先にノートを読む</a></div>
+  </div>
+</div>
+
+<header>
+  <h1>⚡ 電柱クイズ</h1>
+  <p>ここで見える特徴は、どの電力会社？（1社に定まる手がかりだけを出題）</p>
+  <nav class="crosslink">
+    <a href="index.html">🏠 トップへ</a>
+    <a href="power-pole-notes.html">📒 電柱ノート</a>
+  </nav>
+</header>
+
+<main>
+  <div class="card">
+    <div class="stats">
+      <div class="stat"><div class="n" id="scoreN">0</div><div class="l">正解</div></div>
+      <div class="stat"><div class="n" id="answeredN">0</div><div class="l">解答数</div></div>
+      <div class="stat"><div class="n" id="progressN">0/0</div><div class="l">進行</div></div>
+    </div>
+    <div class="progress-bar"><div id="progressFill"></div></div>
+  </div>
+
+  <div class="card" id="questionCard">
+    <div style="text-align:center"><span class="q-tag" id="qTag">-</span></div>
+    <div class="q-visual" id="qVisual" style="display:none;"></div>
+    <div class="q-prompt" id="qPrompt">---</div>
+    <div class="q-ask" id="qAsk">どの電力会社？</div>
+  </div>
+
+  <div class="card">
+    <div class="choices" id="choices"></div>
+  </div>
+
+  <div class="card">
+    <div class="feedback idle" id="feedback">選択肢から電力会社を選んでね</div>
+    <div class="controls" style="margin-top:10px;">
+      <button id="nextBtn" class="primary" disabled>次へ</button>
+      <button id="endBtn">終了して結果を見る</button>
+      <button id="restartBtn">最初から</button>
+    </div>
+  </div>
+
+  <div class="card summary" id="summaryCard" style="display:none;">
+    <div>結果</div>
+    <div class="big" id="summaryScore">0/0</div>
+    <div class="msg" id="summaryMsg"></div>
+    <div class="controls">
+      <button id="playAgainBtn" class="primary">もう一度プレイ</button>
+      <button id="toNotesBtn" onclick="location.href='power-pole-notes.html'">📒 ノートで復習</button>
+    </div>
+  </div>
+</main>
+
+<footer>
+  特徴データ: <a href="https://wikiwiki.jp/geoguessr/%E9%9B%BB%E6%9F%B1/%E6%97%A5%E6%9C%AC" target="_blank" rel="noopener">Geoguessr Japan Wiki「電柱/日本」</a>・個人の攻略記事ほか（例外あり）。図は模式図です。
+</footer>
+
+<script src="power-pole-data.js"></script>
+<script>
+(function () {
+  var D = window.POWER_DATA;
+  var COMPANY = {};
+  D.companies.forEach(function (c) { COMPANY[c.id] = c; });
+  var KIND_LABEL = { image: '画像問題（札・標識）', text: '特徴の文章問題', area: '管轄の例外' };
+
+  var startOverlay = document.getElementById('startOverlay');
+  var typeSelect = document.getElementById('typeSelect');
+  var countAllBtn = document.getElementById('countAllBtn');
+  var progressNoteEl = document.getElementById('progressNote');
+  var resetProgressBtn = document.getElementById('resetProgressBtn');
+  var scoreNEl = document.getElementById('scoreN');
+  var answeredNEl = document.getElementById('answeredN');
+  var progressNEl = document.getElementById('progressN');
+  var progressFillEl = document.getElementById('progressFill');
+  var qTag = document.getElementById('qTag');
+  var qVisual = document.getElementById('qVisual');
+  var qPrompt = document.getElementById('qPrompt');
+  var qAsk = document.getElementById('qAsk');
+  var choicesEl = document.getElementById('choices');
+  var feedbackEl = document.getElementById('feedback');
+  var nextBtn = document.getElementById('nextBtn');
+  var endBtn = document.getElementById('endBtn');
+  var restartBtn = document.getElementById('restartBtn');
+  var summaryCard = document.getElementById('summaryCard');
+  var summaryScoreEl = document.getElementById('summaryScore');
+  var summaryMsgEl = document.getElementById('summaryMsg');
+  var playAgainBtn = document.getElementById('playAgainBtn');
+
+  var queue = [], idx = 0, score = 0, answered = 0, locked = true, current = null;
+  var lastType = 'image', lastCount = null;
+
+  var PROGRESS_KEY = 'powerpolequiz-correct-v1';
+  var CORRECT = loadProgress();
+  function loadProgress() {
+    try { var raw = window.localStorage.getItem(PROGRESS_KEY); return raw ? JSON.parse(raw) : {}; }
+    catch (e) { return {}; }
+  }
+  function saveProgress() {
+    try { window.localStorage.setItem(PROGRESS_KEY, JSON.stringify(CORRECT)); } catch (e) {}
+  }
+
+  function poolFor(type) {
+    return D.cues.filter(function (q) { return type === 'all' || q.kind === type; });
+  }
+  function shuffle(arr) {
+    var a = arr.slice();
+    for (var i = a.length - 1; i > 0; i--) {
+      var j = Math.floor(Math.random() * (i + 1));
+      var t = a[i]; a[i] = a[j]; a[j] = t;
+    }
+    return a;
+  }
+
+  function refreshStart() {
+    var pool = poolFor(typeSelect.value);
+    countAllBtn.textContent = '全' + pool.length + '問';
+    var done = pool.filter(function (q) { return CORRECT[q.id]; }).length;
+    progressNoteEl.textContent = done > 0
+      ? ('✅ 正解済み ' + done + '/' + pool.length + '問は、出し切るかリセットするまで出題されません')
+      : ' ';
+  }
+  typeSelect.addEventListener('change', refreshStart);
+  resetProgressBtn.addEventListener('click', function () {
+    poolFor(typeSelect.value).forEach(function (q) { delete CORRECT[q.id]; });
+    saveProgress();
+    refreshStart();
+  });
+
+  // choices (geographic order)
+  D.companies.forEach(function (c) {
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.setAttribute('data-id', c.id);
+    b.textContent = c.name;
+    b.addEventListener('click', function () { handleAnswer(c.id); });
+    choicesEl.appendChild(b);
+  });
+  var choiceBtns = choicesEl.querySelectorAll('button');
+
+  function setChoices(enabled) {
+    Array.prototype.forEach.call(choiceBtns, function (b) {
+      b.disabled = !enabled;
+      b.classList.remove('correct', 'wrong');
+    });
+  }
+
+  function updateStats() {
+    scoreNEl.textContent = score;
+    answeredNEl.textContent = answered;
+    progressNEl.textContent = idx + '/' + queue.length;
+    progressFillEl.style.width = (queue.length ? idx / queue.length * 100 : 0) + '%';
+  }
+
+  function newGame(type, count) {
+    lastType = type; lastCount = count;
+    var pool = poolFor(type);
+    var remaining = pool.filter(function (q) { return !CORRECT[q.id]; });
+    if (remaining.length === 0) {
+      pool.forEach(function (q) { delete CORRECT[q.id]; });
+      saveProgress();
+      remaining = pool;
+    }
+    var shuffled = shuffle(remaining);
+    queue = (count === 'all') ? shuffled : shuffled.slice(0, Math.min(count, shuffled.length));
+    idx = 0; score = 0; answered = 0; current = null;
+    summaryCard.style.display = 'none';
+    endBtn.disabled = false;
+    nextQuestion();
+  }
+
+  function nextQuestion() {
+    if (idx >= queue.length) { showSummary(); return; }
+    current = queue[idx];
+    idx++;
+    qTag.textContent = KIND_LABEL[current.kind];
+    if (current.kind === 'image') {
+      qVisual.style.display = '';
+      qVisual.innerHTML = D.images[current.img] + '<div class="cap">模式図（レイアウトの特徴のみ再現。実物の色・書体・ロゴとは異なります）</div>';
+    } else {
+      qVisual.style.display = 'none';
+      qVisual.innerHTML = '';
+    }
+    qPrompt.textContent = current.kind === 'image' ? 'この札・標識から分かる電力会社は？' : current.prompt;
+    qAsk.style.display = current.kind === 'image' ? 'none' : '';
+    feedbackEl.className = 'feedback idle';
+    feedbackEl.textContent = '選択肢から電力会社を選んでね';
+    nextBtn.disabled = true;
+    setChoices(true);
+    locked = false;
+    updateStats();
+  }
+
+  function handleAnswer(id) {
+    if (locked || !current) return;
+    locked = true;
+    answered++;
+    var ok = id === current.company;
+    Array.prototype.forEach.call(choiceBtns, function (b) {
+      b.disabled = true;
+      var bid = b.getAttribute('data-id');
+      if (bid === current.company) b.classList.add('correct');
+      else if (bid === id) b.classList.add('wrong');
+    });
+    if (ok) {
+      score++;
+      CORRECT[current.id] = true;
+      saveProgress();
+      feedbackEl.className = 'feedback ok';
+      feedbackEl.innerHTML = '✅ 正解！ ' + COMPANY[current.company].name + '<span class="exp">' + (current.kind === 'image' ? '【特徴】' + current.prompt + '<br>' : '') + current.explain + '</span>';
+    } else {
+      feedbackEl.className = 'feedback bad';
+      feedbackEl.innerHTML = '❌ 不正解… 正解は ' + COMPANY[current.company].name + '（選択: ' + COMPANY[id].name + '）<span class="exp">' + (current.kind === 'image' ? '【特徴】' + current.prompt + '<br>' : '') + current.explain + '</span>';
+    }
+    nextBtn.disabled = false;
+    updateStats();
+  }
+
+  function showSummary() {
+    current = null;
+    locked = true;
+    updateStats();
+    setChoices(false);
+    summaryCard.style.display = 'block';
+    summaryScoreEl.textContent = score + '/' + answered;
+    var pct = answered ? Math.round(score / answered * 100) : 0;
+    var msg;
+    if (answered === 0) msg = 'まだ解答していません。';
+    else if (pct === 100) msg = '完璧！電柱マスターです！';
+    else if (pct >= 80) msg = 'お見事！かなり詳しいですね。';
+    else if (pct >= 50) msg = 'まずまず！ノートで復習してもう一周。';
+    else msg = 'まだまだ伸びしろあり！ノートで復習してみよう。';
+    summaryMsgEl.textContent = msg + '（' + queue.length + '問中 ' + answered + '問に解答）';
+    qTag.textContent = '-';
+    qVisual.style.display = 'none';
+    qPrompt.textContent = 'クイズ終了';
+    nextBtn.disabled = true;
+    endBtn.disabled = true;
+  }
+
+  nextBtn.addEventListener('click', function () { if (locked && current) nextQuestion(); });
+  endBtn.addEventListener('click', function () { if (queue.length) showSummary(); });
+  restartBtn.addEventListener('click', function () { startOverlay.classList.remove('hidden'); refreshStart(); });
+  playAgainBtn.addEventListener('click', function () {
+    if (lastCount !== null) newGame(lastType, lastCount);
+    else { startOverlay.classList.remove('hidden'); refreshStart(); }
+  });
+
+  Array.prototype.forEach.call(startOverlay.querySelectorAll('button[data-count]'), function (btn) {
+    btn.addEventListener('click', function () {
+      var raw = btn.getAttribute('data-count');
+      startOverlay.classList.add('hidden');
+      newGame(typeSelect.value, raw === 'all' ? 'all' : parseInt(raw, 10));
+    });
+  });
+
+  setChoices(false);
+  refreshStart();
+})();
+</script>
+
+</body>
+</html>

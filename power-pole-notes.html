@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>電柱ノート - 電力会社別の特徴</title>
+<style>
+  :root {
+    --bg: #0f172a;
+    --panel-bg: #131c31;
+    --panel-bg-2: #1b2740;
+    --ink: #eef2fb;
+    --sub-ink: #93a2c2;
+    --accent: #f59e0b;
+    --star: #fbbf24;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0; background: var(--bg); color: var(--ink);
+    font-family: "Hiragino Sans", "Yu Gothic", "Noto Sans JP", -apple-system, BlinkMacSystemFont, sans-serif;
+    line-height: 1.65;
+  }
+  header { padding: 22px 20px 8px; text-align: center; }
+  header h1 { margin: 0 0 6px; font-size: 1.5rem; }
+  header p { margin: 0 auto; max-width: 720px; color: var(--sub-ink); font-size: .88rem; }
+  nav.crosslink { margin-top: 12px; display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
+  nav.crosslink a {
+    color: var(--accent); text-decoration: none; font-size: .78rem;
+    border: 1px solid #5b3b0a; padding: 4px 10px; border-radius: 999px;
+  }
+  nav.crosslink a:hover { background: rgba(245,158,11,.12); }
+  nav.crosslink a.primary { background: var(--accent); color: #2a1a02; border-color: var(--accent); font-weight: 700; }
+
+  main { max-width: 1040px; margin: 0 auto; padding: 14px 16px 40px; }
+  h2 { font-size: 1.15rem; margin: 30px 0 10px; padding-left: 10px; border-left: 4px solid var(--accent); }
+  .callout {
+    background: var(--panel-bg); border-radius: 14px; padding: 14px 16px; font-size: .88rem;
+    box-shadow: 0 4px 24px rgba(0,0,0,.25);
+  }
+  .callout ul { margin: 6px 0 0; padding-left: 1.2em; }
+  .callout li { margin: 3px 0; }
+  .warn { border: 1px solid #5b3b0a; background: #1b1608; color: #f3dca8; }
+
+  .grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
+  .card { background: var(--panel-bg); border-radius: 16px; padding: 16px; box-shadow: 0 4px 24px rgba(0,0,0,.25); }
+  .card h3 { margin: 0 0 2px; font-size: 1.1rem; }
+  .card .meta { color: var(--sub-ink); font-size: .78rem; margin-bottom: 8px; }
+  .card .summary { font-size: .9rem; margin: 0 0 10px; color: #fde68a; }
+  .imgs { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+  .imgs figure { margin: 0; width: calc(50% - 4px); min-width: 130px; flex: 1 1 130px; max-width: 260px; }
+  .imgs svg { width: 100%; height: auto; display: block; border-radius: 8px; }
+  .imgs figcaption { font-size: .68rem; color: var(--sub-ink); margin-top: 2px; line-height: 1.4; }
+  ul.points { list-style: none; margin: 0; padding: 0; font-size: .86rem; }
+  ul.points li { display: flex; gap: 6px; margin: 5px 0; }
+  ul.points .mark { width: 1.2em; flex: none; color: var(--star); font-weight: 700; text-align: center; }
+
+  table { width: 100%; border-collapse: collapse; font-size: .86rem; background: var(--panel-bg); border-radius: 12px; overflow: hidden; }
+  th, td { padding: 9px 12px; text-align: left; border-bottom: 1px solid #22304f; vertical-align: top; }
+  th { background: var(--panel-bg-2); font-size: .78rem; color: var(--sub-ink); font-weight: 600; }
+  tr:last-child td { border-bottom: none; }
+
+  .sources { font-size: .82rem; color: var(--sub-ink); }
+  .sources a { color: var(--sub-ink); }
+  footer { text-align: center; padding: 14px; font-size: .72rem; color: var(--sub-ink); }
+
+  @media (max-width: 760px) { .grid { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>⚡ 電柱ノート：電力会社別の特徴</h1>
+  <p>GeoGuessr（日本）で電柱から電力会社＝地域を絞るためのまとめ。電柱番号札と柱の部品で、その会社だけに当てはまる手がかりに ★ を付けています。</p>
+  <nav class="crosslink">
+    <a href="index.html">🏠 トップへ</a>
+    <a class="primary" href="power-pole-quiz.html">⚡ 電柱クイズに挑戦</a>
+  </nav>
+</header>
+
+<main>
+  <div class="callout warn">
+    <strong>ご注意</strong>
+    <ul>
+      <li>情報はジオゲッサーのファンwikiや個人の攻略記事をもとにしたもので、電力会社の公式情報ではありません。地域差や例外があります。</li>
+      <li>図は「札の並び方・文字の種類・ロゴの位置」といった<b>レイアウトの特徴だけを再現した模式図</b>です。実物の色・書体・ロゴとは異なります（LOGO は位置を示すだけの目印）。</li>
+      <li>情報源によって表現が食い違う点（中国電力の書式、中部電力の札の形）は、本文に併記しています。</li>
+    </ul>
+  </div>
+
+  <h2>まず押さえること</h2>
+  <div class="callout">
+    <ul>
+      <li>電柱には通常2枚の札があり、片方がNTT、もう片方が電力会社の札。<b>電力会社の札のほうを見る</b>。</li>
+      <li>NTTの札は北陸を除いてほぼ共通なので、手がかりにはならない（ただし新潟・福井・長野では横長のNTT札が混じる）。</li>
+      <li>札が2枚あるとき、どちらが所有者の札かは地域で違う（NTT東日本の資料より）。</li>
+      <li>赤白（オレンジ白）の塗装は航空法によるもので、会社の手がかりにならない。</li>
+    </ul>
+  </div>
+
+  <h2>会社別の特徴</h2>
+  <div class="grid" id="companyGrid"></div>
+
+  <h2>管轄の例外（県境と電力会社の境界がずれる所）</h2>
+  <table>
+    <tr><th>地域</th><th>配電を担当する会社</th></tr>
+    <tr><td>新潟県</td><td>東北電力（中部電力ではない）</td></tr>
+    <tr><td>山梨県・静岡県東部</td><td>東京電力（中部電力ではない）</td></tr>
+    <tr><td>長野県</td><td>中部電力</td></tr>
+    <tr><td>富山県・石川県・福井県東部</td><td>北陸電力</td></tr>
+    <tr><td>福井県西部</td><td>関西電力</td></tr>
+    <tr><td>三重県の南端</td><td>関西電力（それ以外の三重県は中部電力）</td></tr>
+    <tr><td>沖縄県</td><td>沖縄電力</td></tr>
+  </table>
+
+  <h2>共通パーツの早見表（単独では決め手にならないもの）</h2>
+  <table id="sharedTable"><tr><th>手がかり</th><th>当てはまる会社</th></tr></table>
+
+  <h2>出典</h2>
+  <p class="sources">
+    <a href="https://wikiwiki.jp/geoguessr/%E9%9B%BB%E6%9F%B1/%E6%97%A5%E6%9C%AC" target="_blank" rel="noopener">電柱/日本 - Geoguessr Japan Wiki</a> /
+    <a href="https://note.com/jolly_macaw128/n/ndd4fe4982ef0" target="_blank" rel="noopener">【GEOGUESSR】日本マップ攻略メモ｜OneDog</a> /
+    <a href="https://note.com/91rp0jno/n/n21c29e7d3d0a" target="_blank" rel="noopener">初心者から上級者まで！GeoguessrのJapanマップTipsまとめ！！｜波翔</a> /
+    <a href="https://www.ntt-east.co.jp/chiba/pdf/miwakekata.pdf" target="_blank" rel="noopener">電柱の見分け方（NTT東日本）</a>
+  </p>
+</main>
+
+<footer>電柱ノート ― 図は模式図です。実際の電柱の写真で確認してください。</footer>
+
+<script src="power-pole-data.js"></script>
+<script>
+(function () {
+  var D = window.POWER_DATA;
+  var grid = document.getElementById('companyGrid');
+
+  D.companies.forEach(function (c) {
+    var card = document.createElement('div');
+    card.className = 'card';
+    var html = '<h3>' + c.name + '</h3><div class="meta">' + c.area + ' ／ ' + c.hz + '</div>' +
+      '<p class="summary">' + c.summary + '</p>';
+    var cues = D.cues.filter(function (q) { return q.kind === 'image' && q.company === c.id; });
+    if (cues.length) {
+      html += '<div class="imgs">';
+      cues.forEach(function (q) {
+        html += '<figure>' + D.images[q.img] + '<figcaption>' + q.prompt + '</figcaption></figure>';
+      });
+      html += '</div>';
+    }
+    html += '<ul class="points">';
+    c.points.forEach(function (p) {
+      html += '<li><span class="mark">' + (p[0] || '・') + '</span><span>' + p[1] + '</span></li>';
+    });
+    html += '</ul>';
+    card.innerHTML = html;
+    grid.appendChild(card);
+  });
+
+  var t = document.getElementById('sharedTable');
+  D.shared.forEach(function (row) {
+    var tr = document.createElement('tr');
+    tr.innerHTML = '<td>' + row[0] + '</td><td>' + row[1] + '</td>';
+    t.appendChild(tr);
+  });
+})();
+</script>
+
+</body>
+</html>
