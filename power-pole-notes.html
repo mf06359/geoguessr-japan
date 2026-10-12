@@ -50,6 +50,9 @@
   .imgs figure { margin: 0; width: calc(50% - 4px); min-width: 130px; flex: 1 1 130px; max-width: 260px; }
   .imgs svg { width: 100%; height: auto; display: block; border-radius: 8px; }
   .imgs figcaption { font-size: .68rem; color: var(--sub-ink); margin-top: 2px; line-height: 1.4; }
+  .imgs .cap { font-size: .62rem; color: var(--sub-ink); line-height: 1.4; margin-top: 2px; }
+  .imgs .cap a { color: var(--sub-ink); }
+  .imgs img { max-height: 260px; object-fit: contain; background: #0b1220; }
   ul.points { list-style: none; margin: 0; padding: 0; font-size: .86rem; }
   ul.points li { display: flex; gap: 6px; margin: 5px 0; }
   ul.points .mark { width: 1.2em; flex: none; color: var(--star); font-weight: 700; text-align: center; }
@@ -82,7 +85,7 @@
     <strong>ご注意</strong>
     <ul>
       <li>情報はジオゲッサーのファンwikiや個人の攻略記事をもとにしたもので、電力会社の公式情報ではありません。地域差や例外があります。</li>
-      <li>図は「札の並び方・文字の種類・ロゴの位置」といった<b>レイアウトの特徴だけを再現した模式図</b>です。実物の色・書体・ロゴとは異なります（LOGO は位置を示すだけの目印）。</li>
+      <li>実物の写真は、<b>東北電力の1枚</b>（Wikimedia Commons、CC BY-SA 4.0）だけです。電柱の札を写した使用可能な写真が他社分は見つからなかったため、それ以外は「札の並び方・文字の種類・ロゴの位置」といった<b>レイアウトの特徴だけを再現した模式図</b>です（実物の色・書体・ロゴとは異なります。LOGO は位置を示すだけの目印）。</li>
       <li>情報源によって表現が食い違う点（中国電力の書式、中部電力の札の形）は、本文に併記しています。</li>
     </ul>
   </div>
@@ -132,6 +135,8 @@
   var D = window.POWER_DATA;
   var grid = document.getElementById('companyGrid');
 
+  function render() {
+  grid.innerHTML = '';
   D.companies.forEach(function (c) {
     var card = document.createElement('div');
     card.className = 'card';
@@ -141,7 +146,7 @@
     if (cues.length) {
       html += '<div class="imgs">';
       cues.forEach(function (q) {
-        html += '<figure>' + D.images[q.img] + '<figcaption>' + q.prompt + '</figcaption></figure>';
+        html += '<figure>' + D.visual(q) + '<figcaption>' + q.prompt + '</figcaption></figure>';
       });
       html += '</div>';
     }
@@ -153,6 +158,9 @@
     card.innerHTML = html;
     grid.appendChild(card);
   });
+  }
+  render();
+  D.loadLocal(function (cnt) { if (cnt) render(); });
 
   var t = document.getElementById('sharedTable');
   D.shared.forEach(function (row) {

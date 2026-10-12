@@ -44,9 +44,10 @@
   .progress-bar > div { height: 100%; background: var(--accent); width: 0%; transition: width .25s; }
 
   .q-tag { display: inline-block; font-size: .72rem; color: var(--accent); border: 1px solid #5b3b0a; border-radius: 999px; padding: 2px 10px; margin-bottom: 8px; }
-  .q-visual { max-width: 330px; margin: 0 auto 10px; }
+  .q-visual { max-width: 380px; margin: 0 auto 10px; }
   .q-visual svg { width: 100%; height: auto; display: block; border-radius: 10px; }
   .q-visual .cap { font-size: .68rem; color: var(--sub-ink); text-align: center; margin-top: 3px; }
+  .q-visual .cap a { color: var(--sub-ink); }
   .q-prompt { font-size: 1.05rem; line-height: 1.6; font-weight: 600; text-align: center; }
   .q-ask { margin-top: 6px; font-size: .85rem; color: var(--sub-ink); text-align: center; }
 
@@ -310,7 +311,7 @@
     qTag.textContent = KIND_LABEL[current.kind];
     if (current.kind === 'image') {
       qVisual.style.display = '';
-      qVisual.innerHTML = D.images[current.img] + '<div class="cap">模式図（レイアウトの特徴のみ再現。実物の色・書体・ロゴとは異なります）</div>';
+      qVisual.innerHTML = D.visual(current);
     } else {
       qVisual.style.display = 'none';
       qVisual.innerHTML = '';
@@ -390,6 +391,7 @@
 
   setChoices(false);
   refreshStart();
+  D.loadLocal(function (n) { if (n) refreshStart(); });
 })();
 </script>
 

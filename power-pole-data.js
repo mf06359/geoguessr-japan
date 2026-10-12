@@ -178,6 +178,12 @@
     { id: 'img-tohoku', kind: 'image', company: 'tohoku', img: 'tohoku',
       prompt: '幅広の横長の札。左上にロゴ、その横に小さく幹線名、下に大きな番号。',
       explain: '左上のロゴ＋幹線名＋大きな番号の幅広の横長札は東北電力。新潟県もここ。北陸電力の札は幅がもっと狭く、ロゴと幹線名の段がない。' },
+    { id: 'img-tohoku-photo', kind: 'image', company: 'tohoku',
+      photo: { src: 'power-pole-photos/tohoku-bakagawa-plate.jpg', credit: 'Yauchi',
+        license: 'CC BY-SA 4.0', licenseUrl: 'https://creativecommons.org/licenses/by-sa/4.0/',
+        page: 'https://commons.wikimedia.org/wiki/File:Tohoku-Epco_Bakagawa_River_Branch_180318.jpg' },
+      prompt: '黄色い札。左上にロゴ、その横に線名（○○枝線）、下に大きな番号。',
+      explain: '【実物の写真】青森県中泊町の東北電力「馬鹿川枝線」の電柱の銘板。左上のロゴ＋線名＋下に大きな番号という並びは東北電力。' },
     { id: 'img-tokyo', kind: 'image', company: 'tokyo', img: 'tokyo',
       prompt: '縦長の白い札に、漢字が横書きで書かれている。',
       explain: '縦長の白い札で標識名が漢字の横書きなのは東京電力。縦書きの関西電力と見分ける。山梨県・静岡県東部も東京電力。' },
@@ -275,5 +281,39 @@
     ['NTTの札', '北陸を除きほぼ共通なので、手がかりにならない']
   ];
 
-  root.POWER_DATA = { companies: COMPANIES, cues: CUES, images: IMG, shared: SHARED };
+  function visual(q) {
+    if (q.photo) {
+      var p = q.photo, credit;
+      if (q.local) credit = '私的利用・非公開の写真' + (p.credit ? '（' + esc(p.credit) + '）' : '');
+      else credit = '写真: ' + esc(p.credit) + ' / <a href="' + p.licenseUrl + '" target="_blank" rel="noopener">' + p.license +
+        '</a> / <a href="' + p.page + '" target="_blank" rel="noopener">Wikimedia Commons</a>';
+      return '<img src="' + p.src + '" alt="電柱の写真" loading="lazy" style="width:100%;height:auto;display:block;border-radius:10px">' +
+        '<div class="cap">' + credit + '</div>';
+    }
+    return IMG[q.img] + '<div class="cap">模式図（レイアウトの特徴のみ再現。実物の色・書体・ロゴとは異なります）</div>';
+  }
+
+  // Private photos: put files under local-photos/<company-id>/ and run tools/build_local_manifest.py.
+  // The folder is git-ignored, so this only works on your own machine (404 on the published site is ignored).
+  function loadLocal(cb) {
+    if (typeof fetch !== 'function') { cb(); return; }
+    fetch('local-photos/manifest.json', { cache: 'no-store' })
+      .then(function (r) { if (!r.ok) throw new Error('none'); return r.json(); })
+      .then(function (list) {
+        list.forEach(function (it, i) {
+          CUES.push({
+            id: 'local-' + it.file, kind: 'image', company: it.company, local: true,
+            photo: { src: 'local-photos/' + it.file, credit: it.credit || '' },
+            prompt: it.caption || '（説明なし）',
+            explain: '【あなたの写真】' + (it.caption ? it.caption + '。' : '') + COMPANY_NAME[it.company] + 'の電柱。'
+          });
+        });
+        cb(list.length);
+      })
+      .catch(function () { cb(0); });
+  }
+  var COMPANY_NAME = {};
+  COMPANIES.forEach(function (c) { COMPANY_NAME[c.id] = c.name; });
+
+  root.POWER_DATA = { companies: COMPANIES, cues: CUES, images: IMG, shared: SHARED, visual: visual, loadLocal: loadLocal };
 })(typeof window !== 'undefined' ? window : globalThis);
