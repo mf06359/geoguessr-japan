@@ -655,7 +655,9 @@
     var g = GROUPS[p] || (GROUPS[p] = { fours: [], others: [] });
     (c.length === 4 ? g.fours : g.others).push(m);
   });
-  var PREFIXES = Object.keys(GROUPS).filter(function (p) { return GROUPS[p].fours.length >= 2; }).sort();
+  var PREFIXES = Object.keys(GROUPS).filter(function (p) { return GROUPS[p].fours.length >= 2; }).sort(function (x, y) {
+    return GROUPS[y].fours.length - GROUPS[x].fours.length || (x < y ? -1 : 1);
+  });
 
   var mapWrap = document.getElementById('mapWrap');
   var svgMap = mapWrap.querySelector('svg');
@@ -683,6 +685,7 @@
   var resetProgressBtn = document.getElementById('resetProgressBtn');
 
   var scopePrefix = null;
+  var lastCount = null;
   var queue = [];
   var idx = 0;
   var score = 0;
@@ -1086,7 +1089,10 @@
 
   skipBtn.addEventListener('click', handleSkip);
   restartBtn.addEventListener('click', showStartOverlay);
-  playAgainBtn.addEventListener('click', showStartOverlay);
+  playAgainBtn.addEventListener('click', function () {
+    if (scopePrefix && lastCount !== null) newGame(lastCount);
+    else showStartOverlay();
+  });
   endBtn.addEventListener('click', function () {
     if (!current && idx === 0) return;
     setLocked(true);
@@ -1097,8 +1103,9 @@
     btn.addEventListener('click', function () {
       if (!scopePrefix) return;
       var raw = btn.getAttribute('data-count');
+      lastCount = raw === 'all' ? 'all' : parseInt(raw, 10);
       startOverlay.classList.add('hidden');
-      newGame(raw === 'all' ? 'all' : parseInt(raw, 10));
+      newGame(lastCount);
     });
   });
 
