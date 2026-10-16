@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>立体日本地図 - 3D地形ビューア</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/maplibre-gl@4.7.1/dist/maplibre-gl.css" integrity="sha256-V2sIX92Uh6ZaGSFTKMHghsB85b9toJtmazgG09AI2uk=" crossorigin="">
+<style>
+  :root {
+    --bg: #0f172a; --panel-bg: rgba(19,28,49,.94); --panel-bg-2: #1b2740;
+    --ink: #eef2fb; --sub-ink: #93a2c2; --accent: #38bdf8;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0; height: 100%; background: var(--bg); color: var(--ink);
+    font-family: "Hiragino Sans", "Yu Gothic", "Noto Sans JP", -apple-system, BlinkMacSystemFont, sans-serif;
+  }
+  body { display: flex; flex-direction: column; min-height: 100vh; }
+  header { padding: 12px 16px 8px; text-align: center; flex-shrink: 0; }
+  header h1 { margin: 0 0 2px; font-size: 1.3rem; }
+  header p { margin: 0; color: var(--sub-ink); font-size: .8rem; }
+  nav.crosslink { margin-top: 8px; display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
+  nav.crosslink a {
+    color: var(--accent); text-decoration: none; font-size: .78rem;
+    border: 1px solid #234; padding: 4px 10px; border-radius: 999px;
+  }
+  nav.crosslink a:hover { background: rgba(56,189,248,.12); }
+  .stage { position: relative; flex: 1; min-height: 520px; margin: 0 12px 12px; border-radius: 14px; overflow: hidden; box-shadow: 0 4px 24px rgba(0,0,0,.35); }
+  #map { position: absolute; inset: 0; }
+
+  .panel {
+    position: absolute; left: 10px; top: 10px; z-index: 5; width: 270px; max-height: calc(100% - 20px); overflow: auto;
+    background: var(--panel-bg); border-radius: 14px; padding: 12px 14px; box-shadow: 0 4px 24px rgba(0,0,0,.4);
+    font-size: .82rem;
+  }
+  .panel h2 { margin: 0 0 8px; font-size: .9rem; }
+  .panel label { display: block; margin: 10px 0 4px; color: var(--sub-ink); font-size: .74rem; }
+  .panel select, .panel button {
+    width: 100%; font: inherit; font-size: .85rem; padding: 8px; border-radius: 9px;
+    border: 1px solid #2a3a5c; background: var(--panel-bg-2); color: var(--ink);
+  }
+  .panel button { cursor: pointer; transition: background .15s; }
+  .panel button:hover { background: #253253; }
+  .panel button.on { border-color: var(--accent); color: var(--accent); }
+  .panel input[type=range] { width: 100%; }
+  .row { display: flex; gap: 6px; align-items: center; justify-content: space-between; }
+  .row .val { color: var(--sub-ink); min-width: 3em; text-align: right; font-variant-numeric: tabular-nums; }
+  .presets { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .presets button { padding: 7px 4px; font-size: .78rem; }
+  .hint { margin-top: 10px; color: var(--sub-ink); font-size: .7rem; line-height: 1.5; }
+  .collapse { position: absolute; z-index: 6; left: 10px; top: 10px; display: none; width: auto; padding: 8px 12px; border-radius: 9px; border: 1px solid #2a3a5c; background: var(--panel-bg); color: var(--ink); font: inherit; font-size: .8rem; cursor: pointer; }
+  .panel.hidden { display: none; }
+  .panel.hidden + .collapse, .collapse.show { display: block; }
+  .panel .toggle-panel { margin-top: 10px; }
+  .info { position: absolute; right: 10px; bottom: 34px; z-index: 5; background: var(--panel-bg); border-radius: 9px; padding: 5px 10px; font-size: .7rem; color: var(--sub-ink); font-variant-numeric: tabular-nums; }
+  footer { text-align: center; padding: 0 10px 12px; font-size: .7rem; color: var(--sub-ink); }
+  footer a { color: var(--sub-ink); }
+  @media (max-width: 700px) { .panel { width: calc(100% - 20px); max-height: 46%; } }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>🗻 立体日本地図</h1>
+  <p>ドラッグで移動、右ドラッグ（またはCtrl＋ドラッグ／2本指）で回転・傾き。高さの強調や地図の種類を切り替えられます。</p>
+  <nav class="crosslink">
+    <a href="index.html">🏠 トップへ</a>
+    <a href="japan-crop-quiz.html">🧩 3D地図 切り抜きクイズ</a>
+  </nav>
+</header>
+
+<div class="stage">
+  <div id="map"></div>
+
+  <div class="panel" id="panel">
+    <h2>表示の設定</h2>
+    <label for="baseSel">地図の種類</label>
+    <select id="baseSel"></select>
+
+    <label>高さの強調 <span class="val" id="exagVal" style="float:right">1.5×</span></label>
+    <input type="range" id="exag" min="0.5" max="6" step="0.1" value="1.5">
+
+    <label>陰影の濃さ <span class="val" id="hillVal" style="float:right"></span></label>
+    <input type="range" id="hill" min="0" max="1" step="0.05" value="0.4">
+
+    <label>ビューを移動</label>
+    <div class="presets" id="presets"></div>
+
+    <label>操作</label>
+    <div class="presets">
+      <button id="spinBtn" type="button">🔄 自動で回転</button>
+      <button id="northBtn" type="button">🧭 北を上に</button>
+    </div>
+
+    <div class="hint">高さの強調 1× が実際の比率です。数値を上げると山の形が分かりやすくなります。</div>
+    <button class="toggle-panel" id="hideBtn" type="button">設定を隠す</button>
+  </div>
+  <button class="collapse" id="showBtn" type="button">⚙ 設定</button>
+  <div class="info" id="info">-</div>
+</div>
+
+<footer>
+  地図: <a href="https://maps.gsi.go.jp/development/ichiran.html" target="_blank" rel="noopener">国土地理院 地理院タイル</a> ／
+  標高: <a href="https://registry.opendata.aws/terrain-tiles/" target="_blank" rel="noopener">Terrain Tiles (AWS Open Data)</a>（NASA SRTM・USGS・国土地理院ほか） ／
+  描画: <a href="https://maplibre.org/" target="_blank" rel="noopener">MapLibre GL JS</a>
+</footer>
+
+<script src="https://cdn.jsdelivr.net/npm/maplibre-gl@4.7.1/dist/maplibre-gl.js" integrity="sha256-vpYzxNhw4m+zfxz+XFp3GBZnEUAD6hYgeseFDY2ordE=" crossorigin=""></script>
+<script src="japan3d-lib.js"></script>
+<script>
+(function () {
+  var PRESETS = [
+    { n: '日本全体', c: [137.2, 37.0], z: 4.6, p: 50, b: 0 },
+    { n: '富士山', c: [138.7274, 35.3606], z: 10.8, p: 68, b: -25 },
+    { n: '北アルプス（槍ヶ岳）', c: [137.648, 36.342], z: 10.3, p: 68, b: 20 },
+    { n: '立山・黒部', c: [137.6, 36.58], z: 10.6, p: 66, b: -40 },
+    { n: '大雪山', c: [142.85, 43.66], z: 10, p: 66, b: 30 },
+    { n: '利尻富士', c: [141.24, 45.18], z: 11.2, p: 68, b: 160 },
+    { n: '阿蘇', c: [131.1, 32.88], z: 10.8, p: 66, b: -30 },
+    { n: '桜島・錦江湾', c: [130.66, 31.6], z: 10.4, p: 66, b: 200 },
+    { n: '屋久島', c: [130.5, 30.34], z: 10.6, p: 68, b: 60 },
+    { n: '紀伊山地', c: [135.8, 34.0], z: 8.8, p: 62, b: 0 },
+    { n: '瀬戸内海', c: [133.5, 34.2], z: 8.4, p: 60, b: 180 },
+    { n: '伊豆・箱根', c: [139.0, 35.2], z: 9.6, p: 64, b: -60 }
+  ];
+
+  var baseSel = document.getElementById('baseSel');
+  var exag = document.getElementById('exag');
+  var exagVal = document.getElementById('exagVal');
+  var hill = document.getElementById('hill');
+  var hillVal = document.getElementById('hillVal');
+  var presetsEl = document.getElementById('presets');
+  var spinBtn = document.getElementById('spinBtn');
+  var northBtn = document.getElementById('northBtn');
+  var panel = document.getElementById('panel');
+  var hideBtn = document.getElementById('hideBtn');
+  var showBtn = document.getElementById('showBtn');
+  var info = document.getElementById('info');
+
+  Object.keys(J3D.BASES).forEach(function (k) {
+    var o = document.createElement('option');
+    o.value = k; o.textContent = J3D.BASES[k].label;
+    baseSel.appendChild(o);
+  });
+  baseSel.value = 'relief';
+  hill.value = J3D.BASES.relief.hills;
+
+  function opts() {
+    return { exaggeration: parseFloat(exag.value), hills: parseFloat(hill.value) };
+  }
+
+  var map = new maplibregl.Map({
+    container: 'map',
+    style: J3D.style('relief', opts()),
+    center: [137.2, 37.0], zoom: 4.6, pitch: 50, bearing: 0,
+    maxPitch: 80, maxZoom: 14.5, minZoom: 3,
+    attributionControl: { compact: true }
+  });
+  map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'top-right');
+  map.addControl(new maplibregl.ScaleControl({ unit: 'metric' }), 'bottom-right');
+
+  function applyStyle() { map.setStyle(J3D.style(baseSel.value, opts())); }
+  baseSel.addEventListener('change', function () {
+    hill.value = J3D.BASES[baseSel.value].hills;
+    hillVal.textContent = hill.value;
+    applyStyle();
+  });
+  exag.addEventListener('input', function () {
+    exagVal.textContent = parseFloat(exag.value).toFixed(1) + '×';
+    if (map.getTerrain()) map.setTerrain({ source: 'dem', exaggeration: parseFloat(exag.value) });
+  });
+  hill.addEventListener('input', function () {
+    hillVal.textContent = hill.value;
+    if (map.getLayer('hills')) map.setPaintProperty('hills', 'hillshade-exaggeration', parseFloat(hill.value));
+  });
+  hillVal.textContent = hill.value;
+
+  PRESETS.forEach(function (p) {
+    var b = document.createElement('button');
+    b.type = 'button'; b.textContent = p.n;
+    b.addEventListener('click', function () {
+      stopSpin();
+      map.flyTo({ center: p.c, zoom: p.z, pitch: p.p, bearing: p.b, duration: 2600, essential: true });
+    });
+    presetsEl.appendChild(b);
+  });
+
+  var spinning = false, spinRaf = null;
+  function spin() {
+    if (!spinning) return;
+    map.setBearing(map.getBearing() + 0.15);
+    spinRaf = requestAnimationFrame(spin);
+  }
+  function stopSpin() { spinning = false; spinBtn.classList.remove('on'); if (spinRaf) cancelAnimationFrame(spinRaf); }
+  spinBtn.addEventListener('click', function () {
+    if (spinning) { stopSpin(); return; }
+    spinning = true; spinBtn.classList.add('on'); spin();
+  });
+  map.on('mousedown', stopSpin);
+  map.on('touchstart', stopSpin);
+  northBtn.addEventListener('click', function () { stopSpin(); map.easeTo({ bearing: 0, pitch: 50, duration: 800 }); });
+
+  hideBtn.addEventListener('click', function () { panel.classList.add('hidden'); showBtn.classList.add('show'); });
+  showBtn.addEventListener('click', function () { panel.classList.remove('hidden'); showBtn.classList.remove('show'); });
+
+  function updateInfo() {
+    var c = map.getCenter();
+    info.textContent = '中心 ' + c.lat.toFixed(3) + '°N ' + c.lng.toFixed(3) + '°E ／ ズーム ' + map.getZoom().toFixed(1) +
+      ' ／ 傾き ' + Math.round(map.getPitch()) + '° ／ 方位 ' + Math.round(((map.getBearing() % 360) + 360) % 360) + '°';
+  }
+  map.on('move', updateInfo);
+  map.on('load', updateInfo);
+})();
+</script>
+
+</body>
+</html>

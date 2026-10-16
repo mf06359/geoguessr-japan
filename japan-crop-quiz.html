@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>3D地図 切り抜きクイズ</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/maplibre-gl@4.7.1/dist/maplibre-gl.css" integrity="sha256-V2sIX92Uh6ZaGSFTKMHghsB85b9toJtmazgG09AI2uk=" crossorigin="">
+<style>
+  :root {
+    --bg: #0f172a; --panel-bg: #131c31; --panel-bg-2: #1b2740;
+    --ink: #eef2fb; --sub-ink: #93a2c2; --accent: #2dd4bf; --good: #34d399; --bad: #f87171; --warn: #fbbf24;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0; background: var(--bg); color: var(--ink); min-height: 100%;
+    font-family: "Hiragino Sans", "Yu Gothic", "Noto Sans JP", -apple-system, BlinkMacSystemFont, sans-serif;
+  }
+  body { display: flex; flex-direction: column; min-height: 100vh; }
+  header { padding: 12px 16px 6px; text-align: center; }
+  header h1 { margin: 0 0 3px; font-size: 1.35rem; }
+  header p { margin: 0; color: var(--sub-ink); font-size: .82rem; }
+  nav.crosslink { margin-top: 8px; display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
+  nav.crosslink a { color: var(--accent); text-decoration: none; font-size: .78rem; border: 1px solid #1d4a47; padding: 4px 10px; border-radius: 999px; }
+  nav.crosslink a:hover { background: rgba(45,212,191,.12); }
+
+  main { flex: 1; width: 100%; max-width: 1280px; margin: 0 auto; padding: 8px 14px 16px; display: grid; grid-template-columns: 1fr 1fr 300px; gap: 12px; align-items: start; }
+  .card { background: var(--panel-bg); border-radius: 16px; padding: 12px; box-shadow: 0 4px 24px rgba(0,0,0,.25); }
+  .card h2 { margin: 0 0 8px; font-size: .9rem; display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+  .card h2 small { font-weight: 400; color: var(--sub-ink); font-size: .7rem; }
+  .mapbox { position: relative; height: 460px; border-radius: 10px; overflow: hidden; background: #cfd8e3; }
+  .mapbox > div.m { position: absolute; inset: 0; }
+  #cropMap { cursor: grab; touch-action: none; }
+  #cropMap:active { cursor: grabbing; }
+  /* camera-crop frame */
+  .frame { position: absolute; inset: 0; pointer-events: none; border: 3px solid rgba(255,255,255,.9); border-radius: 10px; box-shadow: inset 0 0 0 1px rgba(15,23,42,.5); z-index: 3; }
+  .frame i { position: absolute; width: 22px; height: 22px; border: 3px solid #fbbf24; }
+  .frame i:nth-child(1) { left: 6px; top: 6px; border-right: 0; border-bottom: 0; }
+  .frame i:nth-child(2) { right: 6px; top: 6px; border-left: 0; border-bottom: 0; }
+  .frame i:nth-child(3) { left: 6px; bottom: 6px; border-right: 0; border-top: 0; }
+  .frame i:nth-child(4) { right: 6px; bottom: 6px; border-left: 0; border-top: 0; }
+  .dim { position: absolute; left: 10px; bottom: 28px; z-index: 4; background: rgba(15,23,42,.8); border-radius: 8px; padding: 3px 8px; font-size: .7rem; color: var(--ink); pointer-events: none; }
+  .maplibregl-ctrl-attrib { font-size: 10px; }
+
+  aside { display: flex; flex-direction: column; gap: 12px; }
+  .feedback { min-height: 64px; font-size: .88rem; line-height: 1.5; border-radius: 10px; padding: 10px 12px; }
+  .feedback.ok { background: rgba(52,211,153,.15); color: var(--good); }
+  .feedback.mid { background: rgba(251,191,36,.15); color: var(--warn); }
+  .feedback.bad { background: rgba(248,113,113,.15); color: var(--bad); }
+  .feedback.skip { background: rgba(56,189,248,.15); color: #38bdf8; }
+  .feedback.idle { color: var(--sub-ink); }
+  .stats { display: flex; justify-content: space-between; gap: 8px; }
+  .stat { flex: 1; text-align: center; }
+  .stat .n { font-size: 1.3rem; font-weight: 700; }
+  .stat .l { font-size: .72rem; color: var(--sub-ink); }
+  .progress-bar { height: 6px; border-radius: 4px; background: #263250; overflow: hidden; margin-top: 10px; }
+  .progress-bar > div { height: 100%; background: var(--accent); width: 0%; transition: width .25s; }
+  .controls { display: flex; gap: 10px; }
+  .controls + .controls { margin-top: 10px; }
+  button { flex: 1; font: inherit; font-size: .85rem; padding: 10px 8px; border-radius: 10px; border: 1px solid #2a3a5c; background: var(--panel-bg-2); color: var(--ink); cursor: pointer; transition: background .15s, transform .1s; }
+  button:hover:not(:disabled) { background: #253253; }
+  button:active:not(:disabled) { transform: scale(.97); }
+  button.primary { background: var(--accent); color: #042f2c; border-color: var(--accent); font-weight: 700; }
+  button.primary:hover:not(:disabled) { background: #5eead4; }
+  button:disabled { opacity: .4; cursor: not-allowed; }
+  .summary { text-align: center; }
+  .summary .big { font-size: 2.2rem; font-weight: 700; color: var(--accent); margin: 6px 0; }
+  .summary .msg { color: var(--sub-ink); font-size: .85rem; margin-bottom: 12px; }
+  footer { text-align: center; padding: 10px; font-size: .7rem; color: var(--sub-ink); }
+  footer a { color: var(--sub-ink); }
+
+  @media (max-width: 1000px) { main { grid-template-columns: 1fr; } .mapbox { height: 380px; } }
+
+  .start-overlay { position: fixed; inset: 0; z-index: 2000; background: rgba(15,23,42,.9); display: flex; align-items: center; justify-content: center; padding: 20px; overflow: auto; }
+  .start-overlay.hidden { display: none; }
+  .start-card { background: var(--panel-bg); border-radius: 20px; padding: 28px 26px; max-width: 440px; width: 100%; text-align: center; box-shadow: 0 12px 48px rgba(0,0,0,.5); }
+  .start-card h2 { margin: 0 0 8px; font-size: 1.25rem; }
+  .start-card > p { margin: 0 0 14px; color: var(--sub-ink); font-size: .84rem; line-height: 1.5; }
+  .start-card label { display: block; text-align: left; font-size: .76rem; color: var(--sub-ink); margin: 10px 0 5px; }
+  .start-card select { width: 100%; font: inherit; font-size: .95rem; padding: 9px 10px; border-radius: 10px; border: 1px solid #2a3a5c; background: var(--panel-bg-2); color: var(--ink); }
+  .count-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 16px; }
+  .count-grid button { padding: 15px 8px; font-size: 1rem; }
+  .progress-note { margin: 12px 0 0; font-size: .72rem; color: var(--sub-ink); line-height: 1.5; min-height: 1.5em; }
+  .back-link { display: inline-block; margin-top: 8px; font-size: .78rem; color: var(--sub-ink); flex: none; text-decoration: underline; cursor: pointer; background: none; border: none; padding: 0; }
+  .back-link:hover:not(:disabled) { background: none; }
+</style>
+</head>
+<body>
+
+<div class="start-overlay" id="startOverlay">
+  <div class="start-card">
+    <h2>🧩 3D地図 切り抜きクイズ</h2>
+    <p>日本の3D地形の一部を矩形に切り出しました。地形の形から、それが日本のどこかを右の地図で当てよう。</p>
+    <label for="diffSel">難しさ（切り抜きの広さ）</label>
+    <select id="diffSel">
+      <option value="wide">広域（約300〜500km四方）</option>
+      <option value="mid" selected>中域（約100km四方）</option>
+      <option value="narrow">狭域（約25km四方）</option>
+    </select>
+    <label for="baseSel">切り抜きの地図の種類</label>
+    <select id="baseSel">
+      <option value="relief">色別標高図＋陰影</option>
+      <option value="photo">航空写真</option>
+      <option value="shade">陰影のみ（白黒・難）</option>
+    </select>
+    <label for="orientSel">向き</label>
+    <select id="orientSel">
+      <option value="north">北が上</option>
+      <option value="random">ランダムに回転（難）</option>
+    </select>
+    <div class="count-grid">
+      <button type="button" data-count="1">1問</button>
+      <button type="button" data-count="5">5問</button>
+      <button type="button" data-count="10">10問</button>
+      <button type="button" data-count="all" class="primary" id="countAllBtn">全部</button>
+    </div>
+    <p class="progress-note" id="progressNote">&nbsp;</p>
+    <button type="button" class="back-link" id="resetProgressBtn">🔄 この難しさの正解記録をリセット</button>
+  </div>
+</div>
+
+<header>
+  <h1>🧩 3D地図 切り抜きクイズ</h1>
+  <p>左の3D地形（切り抜き）は、日本のどこ？ 右の地図をクリックして解答。左はドラッグで回転・傾きを変えられます。</p>
+  <nav class="crosslink">
+    <a href="index.html">🏠 トップへ</a>
+    <a href="japan-3d.html">🗻 立体日本地図</a>
+  </nav>
+</header>
+
+<main>
+  <section class="card">
+    <h2>切り抜き（3D） <small id="dimInfo"></small></h2>
+    <div class="mapbox">
+      <div class="m" id="cropMap"></div>
+      <div class="frame"><i></i><i></i><i></i><i></i></div>
+      <div class="dim" id="dimBadge">ドラッグ: 回転・傾き</div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>日本地図 <small>クリックで解答</small></h2>
+    <div class="mapbox"><div class="m" id="guessMap"></div></div>
+  </section>
+
+  <aside>
+    <div class="card">
+      <div class="feedback idle" id="feedback">右の地図をクリックして解答してね</div>
+      <div class="progress-bar"><div id="progressFill"></div></div>
+    </div>
+    <div class="card">
+      <div class="stats">
+        <div class="stat"><div class="n" id="scoreN">0</div><div class="l">合計点</div></div>
+        <div class="stat"><div class="n" id="answeredN">0</div><div class="l">解答数</div></div>
+        <div class="stat"><div class="n" id="avgN">-</div><div class="l">平均点</div></div>
+        <div class="stat"><div class="n" id="progressN">0/0</div><div class="l">進行</div></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="controls">
+        <button id="hintBtn">💡 ヒント（−30%）</button>
+        <button id="skipBtn">スキップ</button>
+      </div>
+      <div class="controls">
+        <button id="nextBtn" class="primary" disabled>次へ</button>
+      </div>
+      <div class="controls">
+        <button id="endBtn">終了して結果を見る</button>
+        <button id="restartBtn">最初から</button>
+      </div>
+    </div>
+    <div class="card summary" id="summaryCard" style="display:none;">
+      <div>結果</div>
+      <div class="big" id="summaryScore">0点</div>
+      <div class="msg" id="summaryMsg"></div>
+      <button id="playAgainBtn" class="primary">もう一度プレイ</button>
+    </div>
+  </aside>
+</main>
+
+<footer>
+  地図: <a href="https://maps.gsi.go.jp/development/ichiran.html" target="_blank" rel="noopener">国土地理院 地理院タイル</a> ／
+  標高: <a href="https://registry.opendata.aws/terrain-tiles/" target="_blank" rel="noopener">Terrain Tiles (AWS Open Data)</a> ／
+  出題地点: <a href="https://github.com/geolonia/japanese-addresses" target="_blank" rel="noopener">geolonia/japanese-addresses</a>（国土交通省 位置参照情報）から抽出 ／
+  描画: <a href="https://maplibre.org/" target="_blank" rel="noopener">MapLibre GL JS</a>
+</footer>
+
+<script src="https://cdn.jsdelivr.net/npm/maplibre-gl@4.7.1/dist/maplibre-gl.js" integrity="sha256-vpYzxNhw4m+zfxz+XFp3GBZnEUAD6hYgeseFDY2ordE=" crossorigin=""></script>
+<script src="japan3d-lib.js"></script>
+<script src="crop-points.js"></script>
+<script>
+(function () {
+  var PREF = ['北海道','青森県','岩手県','宮城県','秋田県','山形県','福島県','茨城県','栃木県','群馬県','埼玉県','千葉県','東京都','神奈川県',
+    '新潟県','富山県','石川県','福井県','山梨県','長野県','岐阜県','静岡県','愛知県','三重県','滋賀県','京都府','大阪府','兵庫県','奈良県',
+    '和歌山県','鳥取県','島根県','岡山県','広島県','山口県','徳島県','香川県','愛媛県','高知県','福岡県','佐賀県','長崎県','熊本県','大分県',
+    '宮崎県','鹿児島県','沖縄県'];
+  var DIFF = {
+    wide:   { label: '広域', zoom: 7.0,  scale: 250 },
+    mid:    { label: '中域', zoom: 8.5,  scale: 100 },
+    narrow: { label: '狭域', zoom: 10.3, scale: 30 }
+  };
+  var PITCH = 55, EXAG = 1.8, THRESHOLD = 85;
+  var POINTS = window.CROP_POINTS || [];
+
+  var $ = function (id) { return document.getElementById(id); };
+  var startOverlay = $('startOverlay'), diffSel = $('diffSel'), baseSel = $('baseSel'), orientSel = $('orientSel');
+  var countAllBtn = $('countAllBtn'), progressNoteEl = $('progressNote'), resetProgressBtn = $('resetProgressBtn');
+  var feedbackEl = $('feedback'), scoreNEl = $('scoreN'), answeredNEl = $('answeredN'), avgNEl = $('avgN');
+  var progressNEl = $('progressN'), progressFillEl = $('progressFill');
+  var hintBtn = $('hintBtn'), skipBtn = $('skipBtn'), nextBtn = $('nextBtn'), endBtn = $('endBtn'), restartBtn = $('restartBtn');
+  var summaryCard = $('summaryCard'), summaryScoreEl = $('summaryScore'), summaryMsgEl = $('summaryMsg'), playAgainBtn = $('playAgainBtn');
+  var dimInfo = $('dimInfo');
+
+  var cfg = null, cropMap = null, guessMap = null, guessReady = false;
+  var queue = [], idx = 0, totalScore = 0, answered = 0, locked = true, current = null, hinted = false;
+  var lastCfg = null, lastCount = null;
+  var markers = [];
+
+  // ---- correct tracking (score >= THRESHOLD without a hint): excluded until the pool is cleared or reset ----
+  var PROGRESS_KEY = 'japancropquiz-correct-v1';
+  var CORRECT = loadProgress();
+  function loadProgress() { try { var r = window.localStorage.getItem(PROGRESS_KEY); return r ? JSON.parse(r) : {}; } catch (e) { return {}; } }
+  function saveProgress() { try { window.localStorage.setItem(PROGRESS_KEY, JSON.stringify(CORRECT)); } catch (e) {} }
+  function keyOf(diff, i) { return diff + '|' + i; }
+  function allIdx() { return POINTS.map(function (_, i) { return i; }); }
+
+  function refreshStart() {
+    var n = POINTS.length;
+    var done = allIdx().filter(function (i) { return CORRECT[keyOf(diffSel.value, i)]; }).length;
+    countAllBtn.textContent = '全' + n + '問';
+    progressNoteEl.textContent = done > 0
+      ? ('✅ 高得点済み ' + done + '/' + n + '問は、出し切るかリセットするまで出題されません')
+      : ' ';
+  }
+  diffSel.addEventListener('change', refreshStart);
+  resetProgressBtn.addEventListener('click', function () {
+    allIdx().forEach(function (i) { delete CORRECT[keyOf(diffSel.value, i)]; });
+    saveProgress(); refreshStart();
+  });
+
+  function shuffle(arr) {
+    var a = arr.slice();
+    for (var i = a.length - 1; i > 0; i--) { var j = Math.floor(Math.random() * (i + 1)); var t = a[i]; a[i] = a[j]; a[j] = t; }
+    return a;
+  }
+
+  // ---- maps ----
+  function setupGuessMap() {
+    guessMap = new maplibregl.Map({
+      container: 'guessMap',
+      style: J3D.style('pale', { exaggeration: 0, hillsOn: false }),
+      center: [137.6, 37.6], zoom: 4.3, minZoom: 3, maxZoom: 10,
+      attributionControl: { compact: true }
+    });
+    guessMap.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
+    guessMap.on('load', function () {
+      guessMap.addSource('ans', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+      guessMap.addLayer({ id: 'ans-fill', type: 'fill', source: 'ans', filter: ['==', '$type', 'Polygon'], paint: { 'fill-color': '#ef4444', 'fill-opacity': 0.18 } });
+      guessMap.addLayer({ id: 'ans-outline', type: 'line', source: 'ans', filter: ['==', '$type', 'Polygon'], paint: { 'line-color': '#ef4444', 'line-width': 2.5 } });
+      guessMap.addLayer({ id: 'ans-line', type: 'line', source: 'ans', filter: ['==', '$type', 'LineString'], paint: { 'line-color': '#fbbf24', 'line-width': 3, 'line-dasharray': [2, 1.5] } });
+      guessReady = true;
+    });
+    guessMap.on('click', function (e) { handleGuess(e.lngLat); });
+  }
+
+  function buildCropMap(first) {
+    if (cropMap) { cropMap.remove(); cropMap = null; }
+    cropMap = new maplibregl.Map({
+      container: 'cropMap',
+      style: J3D.style(cfg.base, { exaggeration: EXAG }),
+      center: [first[1], first[0]], zoom: DIFF[cfg.diff].zoom, pitch: PITCH, bearing: 0,
+      maxPitch: 80, attributionControl: { compact: true }
+    });
+    ['dragPan', 'dragRotate', 'scrollZoom', 'boxZoom', 'doubleClickZoom', 'touchZoomRotate', 'touchPitch', 'keyboard'].forEach(function (h) {
+      if (cropMap[h]) cropMap[h].disable();
+    });
+    // our own drag: horizontal = rotate, vertical = tilt
+    var el = $('cropMap'), drag = null;
+    el.onpointerdown = function (e) { drag = { x: e.clientX, y: e.clientY, b: cropMap.getBearing(), p: cropMap.getPitch() }; try { el.setPointerCapture(e.pointerId); } catch (x) {} };
+    el.onpointermove = function (e) {
+      if (!drag || !cropMap) return;
+      cropMap.setBearing(drag.b - (e.clientX - drag.x) * 0.4);
+      cropMap.setPitch(Math.max(0, Math.min(75, drag.p - (e.clientY - drag.y) * 0.3)));
+    };
+    el.onpointerup = el.onpointercancel = function () { drag = null; };
+  }
+
+  function updateStats() {
+    scoreNEl.textContent = totalScore;
+    answeredNEl.textContent = answered;
+    avgNEl.textContent = answered ? Math.round(totalScore / answered) : '-';
+    progressNEl.textContent = idx + '/' + queue.length;
+    progressFillEl.style.width = (queue.length ? idx / queue.length * 100 : 0) + '%';
+  }
+
+  function clearAnswerLayer() {
+    markers.forEach(function (m) { m.remove(); }); markers = [];
+    if (guessReady) guessMap.getSource('ans').setData({ type: 'FeatureCollection', features: [] });
+  }
+
+  function newGame(c, count) {
+    cfg = c; lastCfg = c; lastCount = count;
+    var all = allIdx();
+    var remaining = all.filter(function (i) { return !CORRECT[keyOf(c.diff, i)]; });
+    if (remaining.length === 0) {
+      all.forEach(function (i) { delete CORRECT[keyOf(c.diff, i)]; });
+      saveProgress(); remaining = all;
+    }
+    var sh = shuffle(remaining);
+    queue = count === 'all' ? sh : sh.slice(0, Math.min(count, sh.length));
+    idx = 0; totalScore = 0; answered = 0; current = null;
+    summaryCard.style.display = 'none';
+    skipBtn.disabled = false; endBtn.disabled = false; nextBtn.disabled = true; hintBtn.disabled = false;
+    buildCropMap(POINTS[queue[0]]);
+    clearAnswerLayer();
+    guessMap.jumpTo({ center: [137.6, 37.6], zoom: window.innerWidth < 1000 ? 3.6 : 4.3 });
+    nextQuestion();
+  }
+
+  function nextQuestion() {
+    clearAnswerLayer();
+    if (idx >= queue.length) { showSummary(); return; }
+    var i = queue[idx]; idx++;
+    var p = POINTS[i];
+    current = { i: i, lat: p[0], lon: p[1], pref: PREF[parseInt(p[2], 10) - 1], label: p[3] };
+    hinted = false;
+    var bearing = cfg.orient === 'random' ? Math.round(Math.random() * 360) : 0;
+    cropMap.jumpTo({ center: [current.lon, current.lat], zoom: DIFF[cfg.diff].zoom, pitch: PITCH, bearing: bearing });
+    feedbackEl.className = 'feedback idle';
+    feedbackEl.textContent = '右の地図をクリックして解答してね（この切り抜きの中心はどこ？）';
+    nextBtn.disabled = true; skipBtn.disabled = false; hintBtn.disabled = false;
+    guessMap.jumpTo({ center: [137.6, 37.6], zoom: window.innerWidth < 1000 ? 3.6 : 4.3 });
+    updateStats();
+    locked = false;
+  }
+
+  function tier(s) {
+    if (s >= 85) return { cls: 'ok', t: '🎯 ほぼ正解！' };
+    if (s >= 60) return { cls: 'ok', t: '😄 とても近い！' };
+    if (s >= 30) return { cls: 'mid', t: '🙂 まずまず' };
+    if (s >= 10) return { cls: 'mid', t: '😅 惜しい…' };
+    return { cls: 'bad', t: '😵 大きく外れました' };
+  }
+  function fmtKm(d) { return d >= 10 ? Math.round(d) + 'km' : d.toFixed(1) + 'km'; }
+
+  function footprint() {
+    var c = $('cropMap'), w = c.clientWidth, h = c.clientHeight;
+    var pts = [[0, 0], [w, 0], [w, h], [0, h], [0, 0]].map(function (xy) {
+      var ll = cropMap.unproject(xy); return [ll.lng, ll.lat];
+    });
+    return pts;
+  }
+
+  function showAnswer(guess) {
+    var actual = [current.lon, current.lat];
+    var feats = [{ type: 'Feature', properties: {}, geometry: { type: 'Polygon', coordinates: [footprint()] } }];
+    if (guess) feats.push({ type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: [[guess.lng, guess.lat], actual] } });
+    guessMap.getSource('ans').setData({ type: 'FeatureCollection', features: feats });
+    markers.push(new maplibregl.Marker({ color: '#ef4444' }).setLngLat(actual).addTo(guessMap));
+    if (guess) markers.push(new maplibregl.Marker({ color: '#38bdf8' }).setLngLat([guess.lng, guess.lat]).addTo(guessMap));
+    var b = new maplibregl.LngLatBounds(actual, actual);
+    if (guess) b.extend([guess.lng, guess.lat]);
+    footprint().forEach(function (c) { b.extend(c); });
+    guessMap.fitBounds(b, { padding: 50, maxZoom: 8, duration: 900 });
+  }
+
+  function handleGuess(ll) {
+    if (locked || !current || !guessReady) return;
+    locked = true; answered++;
+    var d = J3D.haversineKm([current.lat, current.lon], [ll.lat, ll.lng]);
+    var raw = Math.round(100 * Math.exp(-d / DIFF[cfg.diff].scale));
+    var s = hinted ? Math.round(raw * 0.7) : raw;
+    totalScore += s;
+    if (s >= THRESHOLD && !hinted) { CORRECT[keyOf(cfg.diff, current.i)] = true; saveProgress(); }
+    var t = tier(s);
+    feedbackEl.className = 'feedback ' + t.cls;
+    feedbackEl.textContent = t.t + '（' + s + '点・約' + fmtKm(d) + 'ズレ' + (hinted ? '・ヒント使用' : '') + '） 正解は ' + current.pref + ' ' + current.label + ' の周辺でした。';
+    showAnswer({ lng: ll.lng, lat: ll.lat });
+    skipBtn.disabled = true; hintBtn.disabled = true; nextBtn.disabled = false;
+    updateStats();
+  }
+
+  hintBtn.addEventListener('click', function () {
+    if (locked || !current || hinted) return;
+    hinted = true;
+    cropMap.easeTo({ zoom: DIFF[cfg.diff].zoom - 1.4, duration: 900 });
+    feedbackEl.className = 'feedback idle';
+    feedbackEl.textContent = '少し引いて表示しました（この問題の得点は70%になります）。';
+  });
+
+  skipBtn.addEventListener('click', function () {
+    if (locked || !current) return;
+    locked = true;
+    feedbackEl.className = 'feedback skip';
+    feedbackEl.textContent = '⏭️ スキップ： ' + current.pref + ' ' + current.label + ' の周辺でした。';
+    showAnswer(null);
+    skipBtn.disabled = true; hintBtn.disabled = true; nextBtn.disabled = false;
+  });
+
+  nextBtn.addEventListener('click', function () { if (locked && current) nextQuestion(); });
+
+  function showSummary() {
+    current = null; locked = true; updateStats();
+    summaryCard.style.display = 'block';
+    var avg = answered ? Math.round(totalScore / answered) : 0;
+    summaryScoreEl.textContent = totalScore + '点';
+    var msg;
+    if (answered === 0) msg = 'まだ解答していません。';
+    else if (avg >= 80) msg = '完璧！日本の地形マスターです！';
+    else if (avg >= 55) msg = 'お見事！かなり地形に詳しいですね。';
+    else if (avg >= 30) msg = 'まずまず！3D地図で復習してみよう。';
+    else msg = 'まだまだ伸びしろあり！立体日本地図で地形を眺めてみよう。';
+    summaryMsgEl.textContent = msg + '（平均 ' + avg + '点 / ' + answered + '問中）';
+    skipBtn.disabled = true; hintBtn.disabled = true; nextBtn.disabled = true; endBtn.disabled = true;
+  }
+
+  endBtn.addEventListener('click', function () { if (current || queue.length) { clearAnswerLayer(); showSummary(); } });
+  function openStart() { startOverlay.classList.remove('hidden'); refreshStart(); }
+  restartBtn.addEventListener('click', openStart);
+  playAgainBtn.addEventListener('click', function () { if (lastCfg) newGame(lastCfg, lastCount); else openStart(); });
+
+  Array.prototype.forEach.call(startOverlay.querySelectorAll('button[data-count]'), function (btn) {
+    btn.addEventListener('click', function () {
+      var raw = btn.getAttribute('data-count');
+      startOverlay.classList.add('hidden');
+      var c = { diff: diffSel.value, base: baseSel.value, orient: orientSel.value };
+      newGame(c, raw === 'all' ? 'all' : parseInt(raw, 10));
+    });
+  });
+
+  setupGuessMap();
+  refreshStart();
+})();
+</script>
+
+</body>
+</html>
