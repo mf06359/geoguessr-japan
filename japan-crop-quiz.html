@@ -27,7 +27,7 @@
   .card { background: var(--panel-bg); border-radius: 16px; padding: 12px; box-shadow: 0 4px 24px rgba(0,0,0,.25); }
   .card h2 { margin: 0 0 8px; font-size: .9rem; display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
   .card h2 small { font-weight: 400; color: var(--sub-ink); font-size: .7rem; }
-  .mapbox { position: relative; height: 460px; border-radius: 10px; overflow: hidden; background: #cfd8e3; }
+  .mapbox { position: relative; height: 460px; border-radius: 10px; overflow: hidden; background: #0f172a; }
   .mapbox > div.m { position: absolute; inset: 0; }
   #cropMap { cursor: grab; touch-action: none; }
   #cropMap:active { cursor: grabbing; }
@@ -89,7 +89,7 @@
 <div class="start-overlay" id="startOverlay">
   <div class="start-card">
     <h2>🧩 3D地図 切り抜きクイズ</h2>
-    <p>日本の3D地形の一部を矩形に切り出しました。地形の形から、それが日本のどこかを右の地図で当てよう。</p>
+    <p>日本の3D地形（海は除いています）の一部を矩形に切り出しました。地形の形から、それが日本のどこかを右の地図で当てよう。</p>
     <label for="diffSel">難しさ（切り抜きの広さ）</label>
     <select id="diffSel">
       <option value="wide">広域（約300〜500km四方）</option>
@@ -180,6 +180,7 @@
 <footer>
   地図: <a href="https://maps.gsi.go.jp/development/ichiran.html" target="_blank" rel="noopener">国土地理院 地理院タイル</a> ／
   標高: <a href="https://registry.opendata.aws/terrain-tiles/" target="_blank" rel="noopener">Terrain Tiles (AWS Open Data)</a> ／
+  海域: <a href="https://openfreemap.org" target="_blank" rel="noopener">OpenFreeMap</a>（© OpenMapTiles / © OpenStreetMap contributors） ／
   出題地点: <a href="https://github.com/geolonia/japanese-addresses" target="_blank" rel="noopener">geolonia/japanese-addresses</a>（国土交通省 位置参照情報）から抽出 ／
   描画: <a href="https://maplibre.org/" target="_blank" rel="noopener">MapLibre GL JS</a>
 </footer>

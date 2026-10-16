@@ -83,6 +83,10 @@
     <label>陰影の濃さ <span class="val" id="hillVal" style="float:right"></span></label>
     <input type="range" id="hill" min="0" max="1" step="0.05" value="0.4">
 
+    <label style="display:flex;align-items:center;gap:8px;margin-top:12px;color:var(--ink);font-size:.8rem;cursor:pointer;">
+      <input type="checkbox" id="seaChk"> 海を表示する（海底地形も表示）
+    </label>
+
     <label>ビューを移動</label>
     <div class="presets" id="presets"></div>
 
@@ -102,6 +106,7 @@
 <footer>
   地図: <a href="https://maps.gsi.go.jp/development/ichiran.html" target="_blank" rel="noopener">国土地理院 地理院タイル</a> ／
   標高: <a href="https://registry.opendata.aws/terrain-tiles/" target="_blank" rel="noopener">Terrain Tiles (AWS Open Data)</a>（NASA SRTM・USGS・国土地理院ほか） ／
+  海域: <a href="https://openfreemap.org" target="_blank" rel="noopener">OpenFreeMap</a>（© OpenMapTiles / © OpenStreetMap contributors） ／
   描画: <a href="https://maplibre.org/" target="_blank" rel="noopener">MapLibre GL JS</a>
 </footer>
 
@@ -146,7 +151,7 @@
   hill.value = J3D.BASES.relief.hills;
 
   function opts() {
-    return { exaggeration: parseFloat(exag.value), hills: parseFloat(hill.value) };
+    return { exaggeration: parseFloat(exag.value), hills: parseFloat(hill.value), removeSea: !document.getElementById('seaChk').checked };
   }
 
   var map = new maplibregl.Map({
@@ -174,6 +179,7 @@
     if (map.getLayer('hills')) map.setPaintProperty('hills', 'hillshade-exaggeration', parseFloat(hill.value));
   });
   hillVal.textContent = hill.value;
+  document.getElementById('seaChk').addEventListener('change', applyStyle);
 
   PRESETS.forEach(function (p) {
     var b = document.createElement('button');
