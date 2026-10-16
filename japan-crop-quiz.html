@@ -89,12 +89,12 @@
 <div class="start-overlay" id="startOverlay">
   <div class="start-card">
     <h2>🧩 3D地図 切り抜きクイズ</h2>
-    <p>日本の3D地形（海は除いています）の一部を矩形に切り出しました。地形の形から、それが日本のどこかを右の地図で当てよう。</p>
+    <p>日本の3D地形から、真上から見た矩形で切り取った立体ブロックだけを表示します（海と矩形の外は除いています）。その形から、日本のどこかを右の地図で当てよう。</p>
     <label for="diffSel">難しさ（切り抜きの広さ）</label>
     <select id="diffSel">
-      <option value="wide">広域（約300〜500km四方）</option>
-      <option value="mid" selected>中域（約100km四方）</option>
-      <option value="narrow">狭域（約25km四方）</option>
+      <option value="wide">広域（約320×240km）</option>
+      <option value="mid" selected>中域（約100×75km）</option>
+      <option value="narrow">狭域（約30×22km）</option>
     </select>
     <label for="baseSel">切り抜きの地図の種類</label>
     <select id="baseSel">
@@ -120,7 +120,7 @@
 
 <header>
   <h1>🧩 3D地図 切り抜きクイズ</h1>
-  <p>左の3D地形（切り抜き）は、日本のどこ？ 右の地図をクリックして解答。左はドラッグで回転・傾きを変えられます。</p>
+  <p>左は、矩形で切り取った3D地形のブロック。日本のどこ？ 右の地図をクリックして解答。左はドラッグで回転・傾きを変えられます。</p>
   <nav class="crosslink">
     <a href="index.html">🏠 トップへ</a>
     <a href="japan-3d.html">🗻 立体日本地図</a>
@@ -157,7 +157,7 @@
     </div>
     <div class="card">
       <div class="controls">
-        <button id="hintBtn">💡 ヒント（−30%）</button>
+        <button id="hintBtn">💡 ヒント: 地名を表示（−30%）</button>
         <button id="skipBtn">スキップ</button>
       </div>
       <div class="controls">
@@ -195,9 +195,9 @@
     '和歌山県','鳥取県','島根県','岡山県','広島県','山口県','徳島県','香川県','愛媛県','高知県','福岡県','佐賀県','長崎県','熊本県','大分県',
     '宮崎県','鹿児島県','沖縄県'];
   var DIFF = {
-    wide:   { label: '広域', zoom: 7.0,  scale: 250 },
-    mid:    { label: '中域', zoom: 8.5,  scale: 100 },
-    narrow: { label: '狭域', zoom: 10.3, scale: 30 }
+    wide:   { label: '広域', w: 320, h: 240,  scale: 250 },
+    mid:    { label: '中域', w: 100, h: 75,   scale: 100 },
+    narrow: { label: '狭域', w: 30,  h: 22.5, scale: 30 }
   };
   var PITCH = 55, EXAG = 1.8, THRESHOLD = 85;
   var POINTS = window.CROP_POINTS || [];
@@ -211,7 +211,7 @@
   var summaryCard = $('summaryCard'), summaryScoreEl = $('summaryScore'), summaryMsgEl = $('summaryMsg'), playAgainBtn = $('playAgainBtn');
   var dimInfo = $('dimInfo');
 
-  var cfg = null, cropMap = null, guessMap = null, guessReady = false;
+  var cfg = null, cropMap = null, guessMap = null, guessReady = false, cropBase = 'relief', cropRectKey = '';
   var queue = [], idx = 0, totalScore = 0, answered = 0, locked = true, current = null, hinted = false;
   var lastCfg = null, lastCount = null;
   var markers = [];
@@ -263,12 +263,17 @@
     guessMap.on('click', function (e) { handleGuess(e.lngLat); });
   }
 
+  function rectFor(p) { return J3D.rectAround(p[0], p[1], DIFF[cfg.diff].w, DIFF[cfg.diff].h); }
+
   function buildCropMap(first) {
     if (cropMap) { cropMap.remove(); cropMap = null; }
+    cropBase = cfg.base;
+    var rect = rectFor(first);
+    cropRectKey = rect.join(',');
     cropMap = new maplibregl.Map({
       container: 'cropMap',
-      style: J3D.style(cfg.base, { exaggeration: EXAG }),
-      center: [first[1], first[0]], zoom: DIFF[cfg.diff].zoom, pitch: PITCH, bearing: 0,
+      style: J3D.style(cropBase, { exaggeration: EXAG, cutRect: rect }),
+      center: [first[1], first[0]], zoom: 6, pitch: PITCH, bearing: 0,
       maxPitch: 80, attributionControl: { compact: true }
     });
     ['dragPan', 'dragRotate', 'scrollZoom', 'boxZoom', 'doubleClickZoom', 'touchZoomRotate', 'touchPitch', 'keyboard'].forEach(function (h) {
@@ -325,13 +330,31 @@
     current = { i: i, lat: p[0], lon: p[1], pref: PREF[parseInt(p[2], 10) - 1], label: p[3] };
     hinted = false;
     var bearing = cfg.orient === 'random' ? Math.round(Math.random() * 360) : 0;
-    cropMap.jumpTo({ center: [current.lon, current.lat], zoom: DIFF[cfg.diff].zoom, pitch: PITCH, bearing: bearing });
+    current.rect = rectFor(POINTS[i]);
+    placeCrop(current.rect, bearing);
     feedbackEl.className = 'feedback idle';
-    feedbackEl.textContent = '右の地図をクリックして解答してね（この切り抜きの中心はどこ？）';
+    feedbackEl.textContent = '右の地図をクリックして解答してね（このブロックの中心はどこ？）';
     nextBtn.disabled = true; skipBtn.disabled = false; hintBtn.disabled = false;
     guessMap.jumpTo({ center: [137.6, 37.6], zoom: window.innerWidth < 1000 ? 3.6 : 4.3 });
     updateStats();
     locked = false;
+  }
+
+  // show only the rectangular block of terrain: flatten everything outside the lon/lat rectangle and mask it
+  function placeCrop(rect, bearing) {
+    var key = rect.join(',');
+    if (cropBase !== cfg.base) {
+      cropBase = cfg.base; cropRectKey = key;
+      cropMap.setStyle(J3D.style(cropBase, { exaggeration: EXAG, cutRect: rect }));
+    } else if (key !== cropRectKey) {
+      cropRectKey = key;
+      var dem = cropMap.getSource('dem'), mask = cropMap.getSource('cutmask');
+      if (dem && dem.setTiles && mask) { dem.setTiles(J3D.cutTiles(rect)); mask.setData(J3D.cutMask(rect)); }
+      else cropMap.setStyle(J3D.style(cropBase, { exaggeration: EXAG, cutRect: rect }));
+    }
+    var cam = cropMap.cameraForBounds([[rect[0], rect[1]], [rect[2], rect[3]]], { padding: 36, bearing: bearing, pitch: PITCH });
+    cropMap.jumpTo({ center: cam ? cam.center : [(rect[0] + rect[2]) / 2, (rect[1] + rect[3]) / 2],
+      zoom: (cam ? cam.zoom : 8) + 0.1, pitch: PITCH, bearing: bearing });
   }
 
   function tier(s) {
@@ -344,11 +367,8 @@
   function fmtKm(d) { return d >= 10 ? Math.round(d) + 'km' : d.toFixed(1) + 'km'; }
 
   function footprint() {
-    var c = $('cropMap'), w = c.clientWidth, h = c.clientHeight;
-    var pts = [[0, 0], [w, 0], [w, h], [0, h], [0, 0]].map(function (xy) {
-      var ll = cropMap.unproject(xy); return [ll.lng, ll.lat];
-    });
-    return pts;
+    var r = current.rect;
+    return [[r[0], r[1]], [r[2], r[1]], [r[2], r[3]], [r[0], r[3]], [r[0], r[1]]];
   }
 
   function showAnswer(guess) {
@@ -383,9 +403,10 @@
   hintBtn.addEventListener('click', function () {
     if (locked || !current || hinted) return;
     hinted = true;
-    cropMap.easeTo({ zoom: DIFF[cfg.diff].zoom - 1.4, duration: 900 });
+    cropBase = 'std';
+    cropMap.setStyle(J3D.style('std', { exaggeration: EXAG, cutRect: current.rect }));
     feedbackEl.className = 'feedback idle';
-    feedbackEl.textContent = '少し引いて表示しました（この問題の得点は70%になります）。';
+    feedbackEl.textContent = '地名つきの地図に切り替えました（この問題の得点は70%になります）。';
   });
 
   skipBtn.addEventListener('click', function () {

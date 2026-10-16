@@ -36,6 +36,48 @@
         .then(function (b) { return b.arrayBuffer(); })
         .then(function (buf) { return { data: buf }; });
     });
+
+    // "demcut://...?r=minLon,minLat,maxLon,maxLat": like dem0, but everything outside the lon/lat rectangle is flattened
+    // to 0 m, so only the rectangular block of terrain stands up.
+    maplibregl.addProtocol('demcut', function (params, abort) {
+      var m = /terrarium\/(\d+)\/(\d+)\/(\d+)\.png\?r=([-\d.,]+)/.exec(params.url);
+      if (!m) return Promise.reject(new Error('bad demcut url'));
+      var z = +m[1], x = +m[2], y = +m[3], r = m[4].split(',').map(Number), n = Math.pow(2, z);
+      function lat(yy) { return Math.atan(Math.sinh(Math.PI * (1 - 2 * yy / n))) * 180 / Math.PI; }
+      var lon0 = x / n * 360 - 180, lon1 = (x + 1) / n * 360 - 180, latTop = lat(y), latBot = lat(y + 1);
+      var overlap = !(lon1 < r[0] || lon0 > r[2] || latTop < r[1] || latBot > r[3]);
+      function toBuf(c) {
+        return new Promise(function (res) { c.toBlob(res, 'image/png'); })
+          .then(function (b) { return b.arrayBuffer(); }).then(function (buf) { return { data: buf }; });
+      }
+      if (!overlap) {
+        var f = document.createElement('canvas'); f.width = f.height = 256;
+        var fx = f.getContext('2d'); fx.fillStyle = 'rgb(128,0,0)'; fx.fillRect(0, 0, 256, 256);
+        return toBuf(f);
+      }
+      var url = 'https://' + params.url.replace(/^demcut:\/\//, '').replace(/\?r=.*$/, '');
+      return fetch(url, { signal: abort && abort.signal })
+        .then(function (rr) { if (!rr.ok) throw new Error('dem ' + rr.status); return rr.blob(); })
+        .then(function (b) { return createImageBitmap(b, { colorSpaceConversion: 'none', premultiplyAlpha: 'none' }); })
+        .then(function (bmp) {
+          var w = bmp.width, h = bmp.height;
+          var c = document.createElement('canvas'); c.width = w; c.height = h;
+          var cx = c.getContext('2d', { willReadFrequently: true });
+          cx.drawImage(bmp, 0, 0);
+          var im = cx.getImageData(0, 0, w, h), d = im.data;
+          var inLon = [], inLat = [];
+          for (var px = 0; px < w; px++) { var lo = lon0 + (px + 0.5) / w * (lon1 - lon0); inLon.push(lo >= r[0] && lo <= r[2]); }
+          for (var py = 0; py < h; py++) { var la = lat(y + (py + 0.5) / h); inLat.push(la >= r[1] && la <= r[3]); }
+          for (py = 0; py < h; py++) {
+            for (px = 0; px < w; px++) {
+              var i = (py * w + px) * 4;
+              if (!(inLat[py] && inLon[px]) || d[i] < 128) { d[i] = 128; d[i + 1] = 0; d[i + 2] = 0; }
+            }
+          }
+          cx.putImageData(im, 0, 0);
+          return toBuf(c);
+        });
+    });
   }
 
   // labels: true = the raster has place names printed on it (hint / navigation maps)
@@ -59,10 +101,11 @@
     var hills = opts.hills == null ? b.hills : opts.hills;
     var hillsOn = opts.hillsOn !== false;
 
-    var removeSea = opts.removeSea != null ? opts.removeSea : exag > 0;
+    var cutRect = opts.cutRect || null;
+    var removeSea = cutRect ? true : (opts.removeSea != null ? opts.removeSea : exag > 0);
     if (removeSea) ensureProtocol();
     var sources = {
-      dem: { type: 'raster-dem', tiles: removeSea ? ['dem0://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'] : DEM_TILES,
+      dem: { type: 'raster-dem', tiles: cutRect ? cutTiles(cutRect) : (removeSea ? ['dem0://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'] : DEM_TILES),
         tileSize: 256, maxzoom: 15, encoding: 'terrarium', attribution: DEM_ATTR }
     };
     var bgColor = removeSea ? SEA_COLOR : (baseKey === 'shade' ? '#e9eef4' : '#cfd8e3');
@@ -96,9 +139,29 @@
       sources.foreign = { type: 'geojson', data: { type: 'Feature', properties: {}, geometry: { type: 'Polygon', coordinates: [FOREIGN_LAND] } } };
       layers.push({ id: 'foreign', type: 'fill', source: 'foreign', paint: { 'fill-color': SEA_COLOR, 'fill-opacity': 1, 'fill-antialias': false } });
     }
+    if (cutRect) {
+      // hide everything outside the rectangle (the terrain there is already flattened to 0 m)
+      sources.cutmask = { type: 'geojson', data: cutMask(cutRect) };
+      layers.push({ id: 'cutmask', type: 'fill', source: 'cutmask', paint: { 'fill-color': SEA_COLOR, 'fill-opacity': 1, 'fill-antialias': false } });
+    }
     var st = { version: 8, sources: sources, layers: layers };
     if (exag > 0) st.terrain = { source: 'dem', exaggeration: exag };
     return st;
+  }
+
+  function cutTiles(rect) {
+    return ['demcut://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png?r=' + rect.join(',')];
+  }
+  function cutMask(rect) {
+    return { type: 'Feature', properties: {}, geometry: { type: 'Polygon', coordinates: [
+      [[-180, -85], [180, -85], [180, 85], [-180, 85], [-180, -85]],
+      [[rect[0], rect[1]], [rect[0], rect[3]], [rect[2], rect[3]], [rect[2], rect[1]], [rect[0], rect[1]]]
+    ] } };
+  }
+  // rectangle of widthKm x heightKm centred on (lat, lon), as [minLon, minLat, maxLon, maxLat]
+  function rectAround(lat, lon, widthKm, heightKm) {
+    var dLat = heightKm / 2 / 111.2, dLon = widthKm / 2 / (111.2 * Math.cos(lat * Math.PI / 180));
+    return [lon - dLon, lat - dLat, lon + dLon, lat + dLat];
   }
 
   function haversineKm(a, b) {
@@ -109,5 +172,5 @@
     return 2 * R * Math.asin(Math.sqrt(x));
   }
 
-  root.J3D = { BASES: BASES, style: style, haversineKm: haversineKm, SEA_COLOR: SEA_COLOR };
+  root.J3D = { BASES: BASES, style: style, haversineKm: haversineKm, SEA_COLOR: SEA_COLOR, cutTiles: cutTiles, cutMask: cutMask, rectAround: rectAround };
 })(window);
