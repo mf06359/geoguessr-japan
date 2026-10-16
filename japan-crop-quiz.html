@@ -97,7 +97,7 @@
 <div class="start-overlay" id="startOverlay">
   <div class="start-card">
     <h2>🧩 3D地図 切り抜きクイズ</h2>
-    <p>各都道府県の主要な平野・盆地・山地・高原などを中心に、真上から見た矩形で切り取った3D地形のブロックだけを表示します（海は平らな海面）。その形から、どこかを当てよう。</p>
+    <p>各都道府県の主要な平野・盆地・山地・高原などを中心に、真上から見て円形（または矩形）に切り取った3D地形のブロックだけを表示します（海は平らな海面）。その形から、どこかを当てよう。</p>
     <label for="modeSel">解答の方法</label>
     <select id="modeSel">
       <option value="map">地図をクリックして場所を当てる</option>
@@ -106,15 +106,20 @@
     </select>
     <label for="diffSel">難しさ（切り抜きの広さ）</label>
     <select id="diffSel">
-      <option value="wide">広域（約320×240km）</option>
-      <option value="mid" selected>中域（約100×75km）</option>
-      <option value="narrow">狭域（約30×22km）</option>
+      <option value="wide">広域（約320km）</option>
+      <option value="mid" selected>中域（約100km）</option>
+      <option value="narrow">狭域（約30km）</option>
     </select>
     <label for="baseSel">切り抜きの地図の種類</label>
     <select id="baseSel">
       <option value="relief">色別標高図＋陰影</option>
       <option value="photo">航空写真</option>
       <option value="shade">陰影のみ（白黒・難）</option>
+    </select>
+    <label for="shapeSel">切り抜きの形</label>
+    <select id="shapeSel">
+      <option value="circle" selected>円形（丸く切り抜く）</option>
+      <option value="rect">矩形（四角く切り抜く）</option>
     </select>
     <label for="exagSel">標高の強調</label>
     <select id="exagSel">
@@ -140,7 +145,7 @@
 
 <header>
   <h1>🧩 3D地図 切り抜きクイズ</h1>
-  <p>左は、矩形で切り取った3D地形のブロック（中心は各県の主要な地形）。どこ？ 右で解答。左はドラッグで回転・傾きを変えられます。</p>
+  <p>左は、丸く（または四角く）切り取った3D地形のブロック（中心は各県の主要な地形）。どこ？ 右で解答。左はドラッグで回転・傾きを変えられます。</p>
   <nav class="crosslink">
     <a href="index.html">🏠 トップへ</a>
     <a href="japan-3d.html">🗻 立体日本地図</a>
@@ -212,8 +217,8 @@
 </footer>
 
 <script src="https://cdn.jsdelivr.net/npm/maplibre-gl@4.7.1/dist/maplibre-gl.js" integrity="sha256-vpYzxNhw4m+zfxz+XFp3GBZnEUAD6hYgeseFDY2ordE=" crossorigin=""></script>
-<script src="japan3d-lib.js?v=20261016e"></script>
-<script src="crop-points.js?v=20261016e"></script>
+<script src="japan3d-lib.js?v=20261016f"></script>
+<script src="crop-points.js?v=20261016f"></script>
 <script>
 (function () {
   var PREF = ['北海道','青森県','岩手県','宮城県','秋田県','山形県','福島県','茨城県','栃木県','群馬県','埼玉県','千葉県','東京都','神奈川県',
@@ -243,7 +248,7 @@
     '阿武隈高地': [4, 8], '四国山地': [36, 38, 39], '吉野川': [37, 38, 39], '野辺山原': [19], '利根川': [8, 11, 12] };
 
   var $ = function (id) { return document.getElementById(id); };
-  var startOverlay = $('startOverlay'), modeSel = $('modeSel'), diffSel = $('diffSel'), baseSel = $('baseSel'), orientSel = $('orientSel'), exagSel = $('exagSel');
+  var startOverlay = $('startOverlay'), modeSel = $('modeSel'), diffSel = $('diffSel'), baseSel = $('baseSel'), orientSel = $('orientSel'), exagSel = $('exagSel'), shapeSel = $('shapeSel');
   var countAllBtn = $('countAllBtn'), progressNoteEl = $('progressNote'), resetProgressBtn = $('resetProgressBtn');
   var feedbackEl = $('feedback'), scoreNEl = $('scoreN'), answeredNEl = $('answeredN'), avgNEl = $('avgN');
   var progressNEl = $('progressN'), progressFillEl = $('progressFill');
@@ -262,12 +267,12 @@
   var CORRECT = loadProgress();
   function loadProgress() { try { var r = window.localStorage.getItem(PROGRESS_KEY); return r ? JSON.parse(r) : {}; } catch (e) { return {}; } }
   function saveProgress() { try { window.localStorage.setItem(PROGRESS_KEY, JSON.stringify(CORRECT)); } catch (e) {} }
-  function keyOf(mode, diff, i) { return mode + '|' + diff + '|' + i; }
+  function keyOf(mode, diff, i, shape) { return mode + '|' + diff + '|' + i + (shape === 'rect' ? '' : '|c'); }
   function allIdx() { return POINTS.map(function (_, i) { return i; }); }
 
   function refreshStart() {
     var n = POINTS.length;
-    var done = allIdx().filter(function (i) { return CORRECT[keyOf(modeSel.value, diffSel.value, i)]; }).length;
+    var done = allIdx().filter(function (i) { return CORRECT[keyOf(modeSel.value, diffSel.value, i, shapeSel.value)]; }).length;
     countAllBtn.textContent = '全' + n + '問';
     progressNoteEl.textContent = done > 0
       ? ('✅ 高得点済み ' + done + '/' + n + '問は、出し切るかリセットするまで出題されません')
@@ -275,8 +280,9 @@
   }
   diffSel.addEventListener('change', refreshStart);
   modeSel.addEventListener('change', refreshStart);
+  shapeSel.addEventListener('change', refreshStart);
   resetProgressBtn.addEventListener('click', function () {
-    allIdx().forEach(function (i) { delete CORRECT[keyOf(modeSel.value, diffSel.value, i)]; });
+    allIdx().forEach(function (i) { delete CORRECT[keyOf(modeSel.value, diffSel.value, i, shapeSel.value)]; });
     saveProgress(); refreshStart();
   });
 
@@ -305,16 +311,21 @@
     guessMap.on('click', function (e) { handleGuess(e.lngLat); });
   }
 
-  function rectFor(p) { return J3D.rectAround(p[0], p[1], DIFF[cfg.diff].w, DIFF[cfg.diff].h); }
+  // bounding box of the cut region; for a circle the diameter equals the crop width
+  function rectFor(p) {
+    return cfg.shape === 'rect' ? J3D.rectAround(p[0], p[1], DIFF[cfg.diff].w, DIFF[cfg.diff].h)
+      : J3D.rectAround(p[0], p[1], DIFF[cfg.diff].w, DIFF[cfg.diff].w);
+  }
+  function circleFor(p) { return cfg.shape === 'rect' ? null : [p[1], p[0], DIFF[cfg.diff].w / 2]; }
 
   function buildCropMap(first) {
     if (cropMap) { cropMap.remove(); cropMap = null; }
     cropBase = cfg.base;
-    var rect = rectFor(first);
+    var rect = rectFor(first), circ = circleFor(first);
     cropRectKey = rect.join(',');
     cropMap = new maplibregl.Map({
       container: 'cropMap',
-      style: J3D.style(cropBase, { exaggeration: exagFor(cfg), cutRect: rect, borders: 'hidden' }),
+      style: J3D.style(cropBase, { exaggeration: exagFor(cfg), cutRect: rect, cutCircle: circ, borders: 'hidden' }),
       center: [first[1], first[0]], zoom: 6, pitch: PITCH, bearing: 0,
       maxPitch: 80, attributionControl: { compact: true }
     });
@@ -349,9 +360,9 @@
   function newGame(c, count) {
     cfg = c; lastCfg = c; lastCount = count;
     var all = allIdx();
-    var remaining = all.filter(function (i) { return !CORRECT[keyOf(c.mode, c.diff, i)]; });
+    var remaining = all.filter(function (i) { return !CORRECT[keyOf(c.mode, c.diff, i, c.shape)]; });
     if (remaining.length === 0) {
-      all.forEach(function (i) { delete CORRECT[keyOf(c.mode, c.diff, i)]; });
+      all.forEach(function (i) { delete CORRECT[keyOf(c.mode, c.diff, i, c.shape)]; });
       saveProgress(); remaining = all;
     }
     var sh = shuffle(remaining);
@@ -377,7 +388,7 @@
     current = { i: i, lat: p[0], lon: p[1], prefNo: parseInt(p[2], 10), pref: PREF[parseInt(p[2], 10) - 1], label: p[3], type: p[4], typeJa: TYPE_JA[p[4]] || '' };
     hinted = false;
     var bearing = cfg.orient === 'random' ? Math.round(Math.random() * 360) : 0;
-    current.rect = rectFor(POINTS[i]);
+    current.rect = rectFor(POINTS[i]); current.circle = circleFor(POINTS[i]);
     setExplore(false);
     coverUntilReady();
     placeCrop(current.rect, bearing);
@@ -418,21 +429,21 @@
 
   // show only the rectangular block of terrain: flatten everything outside the lon/lat rectangle and mask it
   function placeCrop(rect, bearing) {
-    var key = rect.join(',');
+    var circ = current.circle, key = rect.join(',');
     if (cropBase !== cfg.base) {
       cropBase = cfg.base; cropRectKey = key;
-      cropMap.setStyle(J3D.style(cropBase, { exaggeration: exagFor(cfg), cutRect: rect, borders: 'hidden' }));
+      cropMap.setStyle(J3D.style(cropBase, { exaggeration: exagFor(cfg), cutRect: rect, cutCircle: circ, borders: 'hidden' }));
     } else if (key !== cropRectKey) {
       cropRectKey = key;
       var dem = cropMap.getSource('dem'), mask = cropMap.getSource('cutmask'), line = cropMap.getSource('cutline');
       if (dem && dem.setTiles && mask && line) {
-        dem.setTiles(J3D.cutTiles(rect)); mask.setData(J3D.cutMask(rect)); line.setData(J3D.cutLine(rect));
+        dem.setTiles(J3D.cutTiles(rect, circ)); mask.setData(J3D.cutMask(rect, circ)); line.setData(J3D.cutLine(rect, circ));
         var baseSrc = cropMap.getSource('base');
         if (baseSrc && baseSrc.setTiles) baseSrc.setTiles(J3D.baseTiles(cropBase, rect));
         cropMap.setPaintProperty('cutmask', 'fill-opacity', 1);
         cropMap.setPaintProperty('cutline', 'line-opacity', 0);
         if (cropMap.getLayer('pref-border')) { cropMap.setPaintProperty('pref-border', 'line-opacity', 0); cropMap.setPaintProperty('coast-line', 'line-opacity', 0); }
-      } else cropMap.setStyle(J3D.style(cropBase, { exaggeration: exagFor(cfg), cutRect: rect, borders: 'hidden' }));
+      } else cropMap.setStyle(J3D.style(cropBase, { exaggeration: exagFor(cfg), cutRect: rect, cutCircle: circ, borders: 'hidden' }));
     }
     var cam = cropMap.cameraForBounds([[rect[0], rect[1]], [rect[2], rect[3]]], { padding: 36, bearing: bearing, pitch: PITCH });
     cropMap.jumpTo({ center: cam ? cam.center : [(rect[0] + rect[2]) / 2, (rect[1] + rect[3]) / 2],
@@ -502,7 +513,7 @@
     var ok = btn.getAttribute('data-ok') === '1';
     var s = ok ? (hinted ? 70 : 100) : 0;
     totalScore += s;
-    if (s >= THRESHOLD) { CORRECT[keyOf(cfg.mode, cfg.diff, current.i)] = true; saveProgress(); }
+    if (s >= THRESHOLD) { CORRECT[keyOf(cfg.mode, cfg.diff, current.i, cfg.shape)] = true; saveProgress(); }
     Array.prototype.forEach.call(choiceBtns.querySelectorAll('button'), function (b) {
       b.disabled = true;
       if (b.getAttribute('data-ok') === '1') b.classList.add('correct');
@@ -525,6 +536,7 @@
   function fmtKm(d) { return d >= 10 ? Math.round(d) + 'km' : d.toFixed(1) + 'km'; }
 
   function footprint() {
+    if (current.circle) return J3D.circleRing(current.circle);
     var r = current.rect;
     return [[r[0], r[1]], [r[2], r[1]], [r[2], r[3]], [r[0], r[3]], [r[0], r[1]]];
   }
@@ -549,7 +561,7 @@
     var raw = Math.round(100 * Math.exp(-d / DIFF[cfg.diff].scale));
     var s = hinted ? Math.round(raw * 0.7) : raw;
     totalScore += s;
-    if (s >= THRESHOLD && !hinted) { CORRECT[keyOf(cfg.mode, cfg.diff, current.i)] = true; saveProgress(); }
+    if (s >= THRESHOLD && !hinted) { CORRECT[keyOf(cfg.mode, cfg.diff, current.i, cfg.shape)] = true; saveProgress(); }
     var t = tier(s);
     feedbackEl.className = 'feedback ' + t.cls;
     feedbackEl.innerHTML = t.t + '（' + s + '点・約' + fmtKm(d) + 'ズレ' + (hinted ? '・ヒント使用' : '') + '） 正解は ' + placeName() + ' の周辺でした。';
@@ -563,7 +575,7 @@
     if (locked || !current || hinted) return;
     hinted = true;
     cropBase = 'std';
-    cropMap.setStyle(J3D.style('std', { exaggeration: exagFor(cfg), cutRect: current.rect, borders: 'hidden' }));
+    cropMap.setStyle(J3D.style('std', { exaggeration: exagFor(cfg), cutRect: current.rect, cutCircle: current.circle, borders: 'hidden' }));
     feedbackEl.className = 'feedback idle';
     feedbackEl.textContent = '地名つきの地図に切り替えました（この問題の得点は70%になります）。';
   });
@@ -605,7 +617,7 @@
     btn.addEventListener('click', function () {
       var raw = btn.getAttribute('data-count');
       startOverlay.classList.add('hidden');
-      var c = { mode: modeSel.value, diff: diffSel.value, base: baseSel.value, orient: orientSel.value, exag: exagSel.value };
+      var c = { mode: modeSel.value, diff: diffSel.value, base: baseSel.value, orient: orientSel.value, exag: exagSel.value, shape: shapeSel.value };
       newGame(c, raw === 'all' ? 'all' : parseInt(raw, 10));
     });
   });

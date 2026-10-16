@@ -66,9 +66,10 @@
     // "demcut://...?r=minLon,minLat,maxLon,maxLat": like dem0, but everything outside the lon/lat rectangle is flattened
     // to 0 m, so only the rectangular block of terrain stands up.
     maplibregl.addProtocol('demcut', function (params, abort) {
-      var m = /terrarium\/(\d+)\/(\d+)\/(\d+)\.png\?r=([-\d.,]+)/.exec(params.url);
+      var m = /terrarium\/(\d+)\/(\d+)\/(\d+)\.png\?r=([-\d.,]+)(?:&c=([-\d.,]+))?/.exec(params.url);
       if (!m) return Promise.reject(new Error('bad demcut url'));
       var z = +m[1], x = +m[2], y = +m[3], r = m[4].split(',').map(Number), n = Math.pow(2, z);
+      var circ = m[5] ? m[5].split(',').map(Number) : null; // [lon, lat, radiusKm]
       function lat(yy) { return Math.atan(Math.sinh(Math.PI * (1 - 2 * yy / n))) * 180 / Math.PI; }
       var lon0 = x / n * 360 - 180, lon1 = (x + 1) / n * 360 - 180, latTop = lat(y), latBot = lat(y + 1);
       var overlap = !(lon1 < r[0] || lon0 > r[2] || latTop < r[1] || latBot > r[3]);
@@ -87,13 +88,16 @@
           var cx = c.getContext('2d', { willReadFrequently: true });
           cx.drawImage(bmp, 0, 0);
           var im = cx.getImageData(0, 0, w, h), d = im.data;
-          var inLon = [], inLat = [];
-          for (var px = 0; px < w; px++) { var lo = lon0 + (px + 0.5) / w * (lon1 - lon0); inLon.push(lo >= r[0] && lo <= r[2]); }
-          for (var py = 0; py < h; py++) { var la = lat(y + (py + 0.5) / h); inLat.push(la >= r[1] && la <= r[3]); }
+          var inLon = [], inLat = [], dxs = [], dys = [];
+          var kx = circ ? 111.32 * Math.cos(circ[1] * Math.PI / 180) : 0;
+          for (var px = 0; px < w; px++) { var lo = lon0 + (px + 0.5) / w * (lon1 - lon0); inLon.push(lo >= r[0] && lo <= r[2]); if (circ) dxs.push((lo - circ[0]) * kx); }
+          for (var py = 0; py < h; py++) { var la = lat(y + (py + 0.5) / h); inLat.push(la >= r[1] && la <= r[3]); if (circ) dys.push((la - circ[1]) * 110.57); }
+          var rr = circ ? circ[2] * circ[2] : 0;
           for (py = 0; py < h; py++) {
             for (px = 0; px < w; px++) {
               var i = (py * w + px) * 4;
-              if (!(inLat[py] && inLon[px]) || d[i] < 128) { d[i] = 128; d[i + 1] = 0; d[i + 2] = 0; }
+              var inside = inLat[py] && inLon[px] && (!circ || dxs[px] * dxs[px] + dys[py] * dys[py] <= rr);
+              if (!inside || d[i] < 128) { d[i] = 128; d[i + 1] = 0; d[i + 2] = 0; }
             }
           }
           cx.putImageData(im, 0, 0);
@@ -142,7 +146,7 @@
     var removeSea = !!cutRect || seaMode !== 'floor';
     if (removeSea) ensureProtocol();
     var sources = {
-      dem: { type: 'raster-dem', tiles: cutRect ? cutTiles(cutRect) : (removeSea ? ['dem0://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'] : DEM_TILES),
+      dem: { type: 'raster-dem', tiles: cutRect ? cutTiles(cutRect, opts.cutCircle) : (removeSea ? ['dem0://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'] : DEM_TILES),
         tileSize: 256, maxzoom: 15, encoding: 'terrarium', attribution: DEM_ATTR }
     };
     var bgColor = removeSea ? SEA_COLOR : (baseKey === 'shade' ? '#e9eef4' : '#cfd8e3');
@@ -178,10 +182,10 @@
     }
     if (cutRect) {
       // hide everything outside the rectangle (the terrain there is already flattened to 0 m)
-      sources.cutmask = { type: 'geojson', data: cutMask(cutRect), maxzoom: 9, tolerance: 0, buffer: 0 };
+      sources.cutmask = { type: 'geojson', data: cutMask(cutRect, opts.cutCircle), maxzoom: 9, tolerance: 0, buffer: 0 };
       layers.push({ id: 'cutmask', type: 'fill', source: 'cutmask', paint: { 'fill-color': SEA_COLOR, 'fill-opacity': 1, 'fill-opacity-transition': { duration: 0 }, 'fill-antialias': false } });
       // outline of the block, only shown when the answer is revealed
-      sources.cutline = { type: 'geojson', data: cutLine(cutRect) };
+      sources.cutline = { type: 'geojson', data: cutLine(cutRect, opts.cutCircle) };
       layers.push({ id: 'cutline', type: 'line', source: 'cutline', paint: { 'line-color': '#fbbf24', 'line-width': 3, 'line-opacity': 0, 'line-opacity-transition': { duration: 0 } } });
     }
     if (opts.borders) {
@@ -203,13 +207,23 @@
     return st;
   }
 
-  function cutTiles(rect) {
-    return ['demcut://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png?r=' + rect.join(',')];
+  // circle = [lon, lat, radiusKm] (optional): the cut region is the circle instead of the rectangle (rect = its bounding box)
+  function cutTiles(rect, circle) {
+    return ['demcut://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png?r=' + rect.join(',') + (circle ? '&c=' + circle.join(',') : '')];
   }
-  function cutMask(rect) {
+  function circleRing(c) {
+    var ring = [], steps = 120, k = Math.cos(c[1] * Math.PI / 180);
+    for (var i = 0; i <= steps; i++) {
+      var a = -2 * Math.PI * i / steps; // clockwise, opposite to the outer ring
+      ring.push([c[0] + c[2] * Math.cos(a) / (111.32 * k), c[1] + c[2] * Math.sin(a) / 110.57]);
+    }
+    return ring;
+  }
+  function cutMask(rect, circle) {
+    var hole = circle ? circleRing(circle)
+      : [[rect[0], rect[1]], [rect[0], rect[3]], [rect[2], rect[3]], [rect[2], rect[1]], [rect[0], rect[1]]];
     return { type: 'Feature', properties: {}, geometry: { type: 'Polygon', coordinates: [
-      [[-180, -85], [180, -85], [180, 85], [-180, 85], [-180, -85]],
-      [[rect[0], rect[1]], [rect[0], rect[3]], [rect[2], rect[3]], [rect[2], rect[1]], [rect[0], rect[1]]]
+      [[-180, -85], [180, -85], [180, 85], [-180, 85], [-180, -85]], hole
     ] } };
   }
   // tile URL templates for a base map; with a rect, tiles are fetched only where they overlap it
@@ -220,8 +234,8 @@
     return b.tiles.map(function (t) { return t.replace(/^https:\/\//, 'basecut://') + '?r=' + rect.join(','); });
   }
 
-  function cutLine(rect) {
-    return { type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: [
+  function cutLine(rect, circle) {
+    return { type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: circle ? circleRing(circle) : [
       [rect[0], rect[1]], [rect[2], rect[1]], [rect[2], rect[3]], [rect[0], rect[3]], [rect[0], rect[1]]] } };
   }
   // whole-Japan terrain (sea floor flattened), used when the answer is revealed
@@ -243,5 +257,5 @@
     return 2 * R * Math.asin(Math.sqrt(x));
   }
 
-  root.J3D = { BASES: BASES, style: style, haversineKm: haversineKm, SEA_COLOR: SEA_COLOR, cutTiles: cutTiles, cutMask: cutMask, cutLine: cutLine, fullTiles: fullTiles, baseTiles: baseTiles, rectAround: rectAround };
+  root.J3D = { BASES: BASES, style: style, haversineKm: haversineKm, SEA_COLOR: SEA_COLOR, cutTiles: cutTiles, cutMask: cutMask, cutLine: cutLine, circleRing: circleRing, fullTiles: fullTiles, baseTiles: baseTiles, rectAround: rectAround };
 })(window);
