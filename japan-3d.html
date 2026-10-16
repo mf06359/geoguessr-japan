@@ -83,9 +83,12 @@
     <label>陰影の濃さ <span class="val" id="hillVal" style="float:right"></span></label>
     <input type="range" id="hill" min="0" max="1" step="0.05" value="0.4">
 
-    <label style="display:flex;align-items:center;gap:8px;margin-top:12px;color:var(--ink);font-size:.8rem;cursor:pointer;">
-      <input type="checkbox" id="seaChk"> 海を表示する（海底地形も表示）
-    </label>
+    <label for="seaSel">海の表示</label>
+    <select id="seaSel">
+      <option value="flat" selected>平らな海面（青）</option>
+      <option value="none">海を消す</option>
+      <option value="floor">海底地形も表示</option>
+    </select>
 
     <label>ビューを移動</label>
     <div class="presets" id="presets"></div>
@@ -151,7 +154,7 @@
   hill.value = J3D.BASES.relief.hills;
 
   function opts() {
-    return { exaggeration: parseFloat(exag.value), hills: parseFloat(hill.value), removeSea: !document.getElementById('seaChk').checked };
+    return { exaggeration: parseFloat(exag.value), hills: parseFloat(hill.value), sea: document.getElementById('seaSel').value };
   }
 
   var map = new maplibregl.Map({
@@ -179,7 +182,7 @@
     if (map.getLayer('hills')) map.setPaintProperty('hills', 'hillshade-exaggeration', parseFloat(hill.value));
   });
   hillVal.textContent = hill.value;
-  document.getElementById('seaChk').addEventListener('change', applyStyle);
+  document.getElementById('seaSel').addEventListener('change', applyStyle);
 
   PRESETS.forEach(function (p) {
     var b = document.createElement('button');

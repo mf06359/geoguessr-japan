@@ -5,7 +5,9 @@
   var DEM_ATTR = '標高: <a href="https://registry.opendata.aws/terrain-tiles/" target="_blank" rel="noopener">Terrain Tiles (AWS Open Data)</a>';
   var DEM_TILES = ['https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'];
 
-  var SEA_COLOR = '#0f172a';
+  var SEA_COLOR = '#0f172a';       // the void around the map (also used for "no sea")
+  var FLAT_SEA = '#6aa5d6';        // flat sea surface
+  var FOREIGN_FLAT = '#4b5563';    // foreign land (no relief data) when the sea is shown
   // rough outline (lon, lat) of the Asian mainland / Korea west of the Sea of Japan; the eastern edge runs through open sea
   var FOREIGN_LAND = [[118, 32.8], [126.8, 32.8], [128.2, 34.3], [129.2, 35.0], [130.4, 36.5], [133.5, 41.0], [139.6, 45.7], [139.6, 48.0], [118, 48.0], [118, 32.8]];
 
@@ -102,7 +104,9 @@
     var hillsOn = opts.hillsOn !== false;
 
     var cutRect = opts.cutRect || null;
-    var removeSea = cutRect ? true : (opts.removeSea != null ? opts.removeSea : exag > 0);
+    // sea: 'flat' = flat blue sea surface (default for 3D), 'none' = sea removed, 'floor' = real sea-floor relief
+    var seaMode = opts.sea || (exag > 0 ? 'flat' : 'floor');
+    var removeSea = !!cutRect || seaMode !== 'floor';
     if (removeSea) ensureProtocol();
     var sources = {
       dem: { type: 'raster-dem', tiles: cutRect ? cutTiles(cutRect) : (removeSea ? ['dem0://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'] : DEM_TILES),
@@ -127,17 +131,17 @@
         }
       });
     }
-    if (removeSea) {
+    if (seaMode !== 'floor') {
       // cover the sea with a flat colour using OpenStreetMap ocean polygons (OpenFreeMap vector tiles)
       sources.ofm = { type: 'vector', url: 'https://tiles.openfreemap.org/planet',
         attribution: '<a href="https://openfreemap.org" target="_blank" rel="noopener">OpenFreeMap</a> © OpenMapTiles Data from <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>（海域）' };
       layers.push({ id: 'sea', type: 'fill', source: 'ofm', 'source-layer': 'water', filter: ['==', 'class', 'ocean'],
-        paint: { 'fill-color': SEA_COLOR, 'fill-opacity': 1, 'fill-antialias': false } });
+        paint: { 'fill-color': seaMode === 'flat' ? FLAT_SEA : SEA_COLOR, 'fill-opacity': 1, 'fill-antialias': false } });
     }
-    if (removeSea) {
+    if (seaMode !== 'floor') {
       // the GSI raster paints foreign land (Korea, Primorye) in one flat pale colour: cover it too
       sources.foreign = { type: 'geojson', data: { type: 'Feature', properties: {}, geometry: { type: 'Polygon', coordinates: [FOREIGN_LAND] } } };
-      layers.push({ id: 'foreign', type: 'fill', source: 'foreign', paint: { 'fill-color': SEA_COLOR, 'fill-opacity': 1, 'fill-antialias': false } });
+      layers.push({ id: 'foreign', type: 'fill', source: 'foreign', paint: { 'fill-color': seaMode === 'flat' ? FOREIGN_FLAT : SEA_COLOR, 'fill-opacity': 1, 'fill-antialias': false } });
     }
     if (cutRect) {
       // hide everything outside the rectangle (the terrain there is already flattened to 0 m)
