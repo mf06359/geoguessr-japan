@@ -13,6 +13,30 @@
 
   // "dem0://" tiles = the same terrarium DEM with everything below sea level flattened to 0 m,
   // so the sea floor disappears from the 3D terrain.
+  var FLAT_BUF = null, CLEAR_BUF = null;
+  function flatTile() {
+    if (!FLAT_BUF) FLAT_BUF = new Promise(function (res) {
+      var c = document.createElement('canvas'); c.width = c.height = 256;
+      var x = c.getContext('2d'); x.fillStyle = 'rgb(128,0,0)'; x.fillRect(0, 0, 256, 256);
+      c.toBlob(res, 'image/png');
+    }).then(function (b) { return b.arrayBuffer(); });
+    return FLAT_BUF.then(function (b) { return { data: b.slice(0) }; });
+  }
+  function clearTile() {
+    if (!CLEAR_BUF) {
+      var bin = atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==');
+      var u = new Uint8Array(bin.length); for (var i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
+      CLEAR_BUF = u.buffer;
+    }
+    return Promise.resolve({ data: CLEAR_BUF.slice(0) });
+  }
+  function tileOverlaps(z, x, y, r) {
+    var n = Math.pow(2, z);
+    function lat(yy) { return Math.atan(Math.sinh(Math.PI * (1 - 2 * yy / n))) * 180 / Math.PI; }
+    var lon0 = x / n * 360 - 180, lon1 = (x + 1) / n * 360 - 180, latTop = lat(y), latBot = lat(y + 1);
+    return !(lon1 < r[0] || lon0 > r[2] || latTop < r[1] || latBot > r[3]);
+  }
+
   var protocolReady = false;
   function ensureProtocol() {
     if (protocolReady || !root.maplibregl || !maplibregl.addProtocol) return;
@@ -52,11 +76,7 @@
         return new Promise(function (res) { c.toBlob(res, 'image/png'); })
           .then(function (b) { return b.arrayBuffer(); }).then(function (buf) { return { data: buf }; });
       }
-      if (!overlap) {
-        var f = document.createElement('canvas'); f.width = f.height = 256;
-        var fx = f.getContext('2d'); fx.fillStyle = 'rgb(128,0,0)'; fx.fillRect(0, 0, 256, 256);
-        return toBuf(f);
-      }
+      if (!overlap) return flatTile();
       var url = 'https://' + params.url.replace(/^demcut:\/\//, '').replace(/\?r=.*$/, '');
       return fetch(url, { signal: abort && abort.signal })
         .then(function (rr) { if (!rr.ok) throw new Error('dem ' + rr.status); return rr.blob(); })
@@ -79,6 +99,19 @@
           cx.putImageData(im, 0, 0);
           return toBuf(c);
         });
+    });
+
+    // "basecut://host/path/{z}/{x}/{y}.ext?r=...": base-map tiles are only fetched where they overlap the rectangle;
+    // everything else is a transparent pixel (those tiles would be masked anyway).
+    maplibregl.addProtocol('basecut', function (params, abort) {
+      var m = /\/(\d+)\/(\d+)\/(\d+)\.(png|jpg)\?r=([-\d.,]+)/.exec(params.url);
+      if (!m) return Promise.reject(new Error('bad basecut url'));
+      var r = m[5].split(',').map(Number);
+      if (!tileOverlaps(+m[1], +m[2], +m[3], r)) return clearTile();
+      var url = 'https://' + params.url.replace(/^basecut:\/\//, '').replace(/\?r=.*$/, '');
+      return fetch(url, { signal: abort && abort.signal })
+        .then(function (rr) { if (!rr.ok) return null; return rr.arrayBuffer(); })
+        .then(function (buf) { return buf ? { data: buf } : clearTile(); });
     });
   }
 
@@ -115,7 +148,7 @@
     var bgColor = removeSea ? SEA_COLOR : (baseKey === 'shade' ? '#e9eef4' : '#cfd8e3');
     var layers = [{ id: 'bg', type: 'background', paint: { 'background-color': bgColor } }];
     if (b.tiles) {
-      sources.base = { type: 'raster', tiles: b.tiles, tileSize: 256, maxzoom: b.maxzoom, attribution: b.attr };
+      sources.base = { type: 'raster', tiles: cutRect ? baseTiles(baseKey, cutRect) : b.tiles, tileSize: 256, maxzoom: b.maxzoom, attribution: b.attr };
       // GSI tiles only make sense inside Japan; don't paint stray patches of foreign land
       if (!b.labels) sources.base.bounds = [122.5, 20.0, 154.5, 45.6];
       layers.push({ id: 'base', type: 'raster', source: 'base', paint: { 'raster-fade-duration': 0 } });
@@ -145,11 +178,11 @@
     }
     if (cutRect) {
       // hide everything outside the rectangle (the terrain there is already flattened to 0 m)
-      sources.cutmask = { type: 'geojson', data: cutMask(cutRect) };
-      layers.push({ id: 'cutmask', type: 'fill', source: 'cutmask', paint: { 'fill-color': SEA_COLOR, 'fill-opacity': 1, 'fill-antialias': false } });
+      sources.cutmask = { type: 'geojson', data: cutMask(cutRect), maxzoom: 9, tolerance: 0, buffer: 0 };
+      layers.push({ id: 'cutmask', type: 'fill', source: 'cutmask', paint: { 'fill-color': SEA_COLOR, 'fill-opacity': 1, 'fill-opacity-transition': { duration: 0 }, 'fill-antialias': false } });
       // outline of the block, only shown when the answer is revealed
       sources.cutline = { type: 'geojson', data: cutLine(cutRect) };
-      layers.push({ id: 'cutline', type: 'line', source: 'cutline', paint: { 'line-color': '#fbbf24', 'line-width': 3, 'line-opacity': 0 } });
+      layers.push({ id: 'cutline', type: 'line', source: 'cutline', paint: { 'line-color': '#fbbf24', 'line-width': 3, 'line-opacity': 0, 'line-opacity-transition': { duration: 0 } } });
     }
     if (opts.borders) {
       // coastline + prefecture borders (OpenStreetMap via OpenFreeMap). 'hidden' = present but invisible until revealed.
@@ -157,13 +190,13 @@
         attribution: '<a href="https://openfreemap.org" target="_blank" rel="noopener">OpenFreeMap</a> © OpenMapTiles Data from <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>' };
       var bo = opts.borders === 'hidden' ? 0 : 0.9;
       layers.push({ id: 'coast-line', type: 'line', source: 'ofm', 'source-layer': 'water', filter: ['==', 'class', 'ocean'],
-        paint: { 'line-color': '#f1f5f9', 'line-width': 1.3, 'line-opacity': bo } });
+        paint: { 'line-color': '#f1f5f9', 'line-width': 1.3, 'line-opacity': bo, 'line-opacity-transition': { duration: 0 } } });
       // only Japanese prefectures: inside a box around Japan and not inside the Korea / Asian-mainland outline
       var box = { type: 'Polygon', coordinates: [[[122.5, 20], [154.5, 20], [154.5, 46], [122.5, 46], [122.5, 20]]] };
       var mainland = { type: 'Polygon', coordinates: [FOREIGN_LAND] };
       layers.push({ id: 'pref-border', type: 'line', source: 'ofm', 'source-layer': 'boundary',
         filter: ['all', ['==', ['get', 'admin_level'], 4], ['!=', ['get', 'maritime'], 1], ['within', box], ['!', ['within', mainland]]],
-        paint: { 'line-color': '#fde68a', 'line-width': ['interpolate', ['linear'], ['zoom'], 4, 0.8, 8, 1.8], 'line-opacity': bo } });
+        paint: { 'line-color': '#fde68a', 'line-width': ['interpolate', ['linear'], ['zoom'], 4, 0.8, 8, 1.8], 'line-opacity': bo, 'line-opacity-transition': { duration: 0 } } });
     }
     var st = { version: 8, sources: sources, layers: layers };
     if (exag > 0) st.terrain = { source: 'dem', exaggeration: exag };
@@ -179,6 +212,14 @@
       [[rect[0], rect[1]], [rect[0], rect[3]], [rect[2], rect[3]], [rect[2], rect[1]], [rect[0], rect[1]]]
     ] } };
   }
+  // tile URL templates for a base map; with a rect, tiles are fetched only where they overlap it
+  function baseTiles(baseKey, rect) {
+    var b = BASES[baseKey];
+    if (!b || !b.tiles) return null;
+    if (!rect) return b.tiles;
+    return b.tiles.map(function (t) { return t.replace(/^https:\/\//, 'basecut://') + '?r=' + rect.join(','); });
+  }
+
   function cutLine(rect) {
     return { type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: [
       [rect[0], rect[1]], [rect[2], rect[1]], [rect[2], rect[3]], [rect[0], rect[3]], [rect[0], rect[1]]] } };
@@ -202,5 +243,5 @@
     return 2 * R * Math.asin(Math.sqrt(x));
   }
 
-  root.J3D = { BASES: BASES, style: style, haversineKm: haversineKm, SEA_COLOR: SEA_COLOR, cutTiles: cutTiles, cutMask: cutMask, cutLine: cutLine, fullTiles: fullTiles, rectAround: rectAround };
+  root.J3D = { BASES: BASES, style: style, haversineKm: haversineKm, SEA_COLOR: SEA_COLOR, cutTiles: cutTiles, cutMask: cutMask, cutLine: cutLine, fullTiles: fullTiles, baseTiles: baseTiles, rectAround: rectAround };
 })(window);

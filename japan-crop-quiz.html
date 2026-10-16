@@ -38,6 +38,8 @@
   .frame i:nth-child(2) { right: 6px; top: 6px; border-left: 0; border-bottom: 0; }
   .frame i:nth-child(3) { left: 6px; bottom: 6px; border-right: 0; border-top: 0; }
   .frame i:nth-child(4) { right: 6px; bottom: 6px; border-left: 0; border-top: 0; }
+  .cover { position: absolute; inset: 0; z-index: 2; background: #0f172a; display: none; align-items: center; justify-content: center; color: var(--sub-ink); font-size: .9rem; pointer-events: none; }
+  .cover.on { display: flex; }
   .dim { position: absolute; left: 10px; bottom: 28px; z-index: 4; background: rgba(15,23,42,.8); border-radius: 8px; padding: 3px 8px; font-size: .7rem; color: var(--ink); pointer-events: none; }
   .maplibregl-ctrl-attrib { font-size: 10px; }
   ruby rt { font-size: .5em; color: var(--sub-ink); font-weight: 400; letter-spacing: 0; }
@@ -150,6 +152,7 @@
     <h2>切り抜き（3D） <small id="dimInfo">答え合わせで日本全体の地形・海岸線・県境も表示</small></h2>
     <div class="mapbox">
       <div class="m" id="cropMap"></div>
+      <div class="cover" id="cropCover"><span>読み込み中…</span></div>
       <div class="frame"><i></i><i></i><i></i><i></i></div>
       <div class="dim" id="dimBadge">ドラッグ: 回転・傾き</div>
     </div>
@@ -209,8 +212,8 @@
 </footer>
 
 <script src="https://cdn.jsdelivr.net/npm/maplibre-gl@4.7.1/dist/maplibre-gl.js" integrity="sha256-vpYzxNhw4m+zfxz+XFp3GBZnEUAD6hYgeseFDY2ordE=" crossorigin=""></script>
-<script src="japan3d-lib.js?v=20261016d"></script>
-<script src="crop-points.js?v=20261016d"></script>
+<script src="japan3d-lib.js?v=20261016e"></script>
+<script src="crop-points.js?v=20261016e"></script>
 <script>
 (function () {
   var PREF = ['北海道','青森県','岩手県','宮城県','秋田県','山形県','福島県','茨城県','栃木県','群馬県','埼玉県','千葉県','東京都','神奈川県',
@@ -246,12 +249,13 @@
   var progressNEl = $('progressN'), progressFillEl = $('progressFill');
   var hintBtn = $('hintBtn'), skipBtn = $('skipBtn'), nextBtn = $('nextBtn'), endBtn = $('endBtn'), restartBtn = $('restartBtn');
   var summaryCard = $('summaryCard'), summaryScoreEl = $('summaryScore'), summaryMsgEl = $('summaryMsg'), playAgainBtn = $('playAgainBtn');
-  var dimInfo = $('dimInfo'), guessCard = $('guessCard'), choiceCard = $('choiceCard'), choiceBtns = $('choiceBtns');
+  var cropCover = $('cropCover'), dimInfo = $('dimInfo'), guessCard = $('guessCard'), choiceCard = $('choiceCard'), choiceBtns = $('choiceBtns');
 
   var cfg = null, cropMap = null, guessMap = null, guessReady = false, cropBase = 'relief', cropRectKey = '';
   var queue = [], idx = 0, totalScore = 0, answered = 0, locked = true, current = null, hinted = false;
   var lastCfg = null, lastCount = null;
   var markers = [];
+  var exploring = false, navCtl = null;
 
   // ---- correct tracking (score >= THRESHOLD without a hint): excluded until the pool is cleared or reset ----
   var PROGRESS_KEY = 'japancropquiz-correct-v2';
@@ -314,12 +318,13 @@
       center: [first[1], first[0]], zoom: 6, pitch: PITCH, bearing: 0,
       maxPitch: 80, attributionControl: { compact: true }
     });
+    navCtl = null; exploring = false;
     ['dragPan', 'dragRotate', 'scrollZoom', 'boxZoom', 'doubleClickZoom', 'touchZoomRotate', 'touchPitch', 'keyboard'].forEach(function (h) {
       if (cropMap[h]) cropMap[h].disable();
     });
     // our own drag: horizontal = rotate, vertical = tilt
     var el = $('cropMap'), drag = null;
-    el.onpointerdown = function (e) { drag = { x: e.clientX, y: e.clientY, b: cropMap.getBearing(), p: cropMap.getPitch() }; try { el.setPointerCapture(e.pointerId); } catch (x) {} };
+    el.onpointerdown = function (e) { if (exploring) return; drag = { x: e.clientX, y: e.clientY, b: cropMap.getBearing(), p: cropMap.getPitch() }; try { el.setPointerCapture(e.pointerId); } catch (x) {} };
     el.onpointermove = function (e) {
       if (!drag || !cropMap) return;
       cropMap.setBearing(drag.b - (e.clientX - drag.x) * 0.4);
@@ -373,6 +378,8 @@
     hinted = false;
     var bearing = cfg.orient === 'random' ? Math.round(Math.random() * 360) : 0;
     current.rect = rectFor(POINTS[i]);
+    setExplore(false);
+    coverUntilReady();
     placeCrop(current.rect, bearing);
     feedbackEl.className = 'feedback idle';
     feedbackEl.textContent = cfg.mode === 'map' ? '右の地図をクリックして解答してね（このブロックの中心はどこ？）' : '4つの選択肢から選んで解答してね';
@@ -381,6 +388,32 @@
     else buildChoices();
     updateStats();
     locked = false;
+  }
+
+  // after the answer is revealed: allow zooming / panning around the zoomed-out view
+  function setExplore(on) {
+    if (!cropMap) return;
+    exploring = on;
+    ['dragPan', 'scrollZoom', 'doubleClickZoom', 'touchZoomRotate', 'dragRotate'].forEach(function (h) {
+      if (cropMap[h]) { if (on) cropMap[h].enable(); else cropMap[h].disable(); }
+    });
+    if (on && !navCtl) { navCtl = new maplibregl.NavigationControl({ visualizePitch: true }); cropMap.addControl(navCtl, 'top-right'); }
+    if (!on && navCtl) { cropMap.removeControl(navCtl); navCtl = null; }
+    $('dimBadge').textContent = on ? 'ホイールで拡大・ドラッグで移動' : 'ドラッグ: 回転・傾き';
+  }
+
+  // hide the 3D view behind a plain cover until the new block has fully loaded (no leftovers from the previous answer)
+  var coverToken = 0;
+  function coverUntilReady() {
+    var tok = ++coverToken, t0 = performance.now(), tries = 0;
+    cropCover.classList.add('on');
+    var iv = setInterval(function () {
+      tries++;
+      if (tok !== coverToken) { clearInterval(iv); return; }
+      if ((cropMap && cropMap.loaded() && performance.now() - t0 > 400) || tries > 160) {
+        clearInterval(iv); cropCover.classList.remove('on');
+      }
+    }, 120);
   }
 
   // show only the rectangular block of terrain: flatten everything outside the lon/lat rectangle and mask it
@@ -394,6 +427,8 @@
       var dem = cropMap.getSource('dem'), mask = cropMap.getSource('cutmask'), line = cropMap.getSource('cutline');
       if (dem && dem.setTiles && mask && line) {
         dem.setTiles(J3D.cutTiles(rect)); mask.setData(J3D.cutMask(rect)); line.setData(J3D.cutLine(rect));
+        var baseSrc = cropMap.getSource('base');
+        if (baseSrc && baseSrc.setTiles) baseSrc.setTiles(J3D.baseTiles(cropBase, rect));
         cropMap.setPaintProperty('cutmask', 'fill-opacity', 1);
         cropMap.setPaintProperty('cutline', 'line-opacity', 0);
         if (cropMap.getLayer('pref-border')) { cropMap.setPaintProperty('pref-border', 'line-opacity', 0); cropMap.setPaintProperty('coast-line', 'line-opacity', 0); }
@@ -410,6 +445,8 @@
     var dem = cropMap.getSource('dem');
     if (dem && dem.setTiles && cropMap.getLayer('cutmask')) {
       dem.setTiles(J3D.fullTiles());
+      var baseSrc = cropMap.getSource('base');
+      if (baseSrc && baseSrc.setTiles) baseSrc.setTiles(J3D.baseTiles(cropBase, null));
       cropMap.setPaintProperty('cutmask', 'fill-opacity', 0.6);
       cropMap.setPaintProperty('cutline', 'line-opacity', 1);
       if (cropMap.getLayer('pref-border')) { cropMap.setPaintProperty('pref-border', 'line-opacity', 0.95); cropMap.setPaintProperty('coast-line', 'line-opacity', 0.9); }
@@ -422,6 +459,7 @@
     var dLon = Math.max(Math.abs(bb.getWest() - c[0]), Math.abs(bb.getEast() - c[0]));
     var dLat = Math.max(Math.abs(bb.getSouth() - c[1]), Math.abs(bb.getNorth() - c[1]));
     var sym = new maplibregl.LngLatBounds([c[0] - dLon, c[1] - dLat], [c[0] + dLon, c[1] + dLat]);
+    setExplore(true);
     var cam = cropMap.cameraForBounds(sym, { padding: 20, bearing: 0, pitch: 40 });
     cropMap.easeTo({ center: c, zoom: Math.max(3.2, (cam ? cam.zoom : 5) + 0.2), pitch: 40, bearing: 0, duration: 2200 });
   }
