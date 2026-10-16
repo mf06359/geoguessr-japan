@@ -112,6 +112,12 @@
       <option value="photo">航空写真</option>
       <option value="shade">陰影のみ（白黒・難）</option>
     </select>
+    <label for="exagSel">標高の強調</label>
+    <select id="exagSel">
+      <option value="normal">標準</option>
+      <option value="strong" selected>強め</option>
+      <option value="max">最強（山がとても高く見える）</option>
+    </select>
     <label for="orientSel">向き</label>
     <select id="orientSel">
       <option value="north">北が上</option>
@@ -139,7 +145,7 @@
 
 <main>
   <section class="card">
-    <h2>切り抜き（3D） <small id="dimInfo"></small></h2>
+    <h2>切り抜き（3D） <small id="dimInfo">答え合わせで日本全体の地形・海岸線・県境も表示</small></h2>
     <div class="mapbox">
       <div class="m" id="cropMap"></div>
       <div class="frame"><i></i><i></i><i></i><i></i></div>
@@ -214,7 +220,11 @@
     mid:    { label: '中域', w: 100, h: 75,   scale: 100 },
     narrow: { label: '狭域', w: 30,  h: 22.5, scale: 30 }
   };
-  var PITCH = 55, EXAG = 1.8, THRESHOLD = 85;
+  var PITCH = 55, THRESHOLD = 85;
+  // vertical exaggeration: wider crops are flatter relative to their width, so they get more
+  var EXAG0 = { wide: 3.5, mid: 2.5, narrow: 1.6 };
+  var EXAG_MULT = { normal: 1, strong: 1.6, max: 2.5 };
+  function exagFor(c) { return EXAG0[c.diff] * (EXAG_MULT[c.exag] || 1.6); }
   var POINTS = window.CROP_POINTS || [];
   var TYPE_JA = { plain: '平野', basin: '盆地', mountain: '山地・山脈', volcano: '火山', plateau: '高原・台地', peninsula: '半島', island: '島', other: '湖・海岸・渓谷など' };
   var REGION = [[1], [2, 3, 4, 5, 6, 7], [8, 9, 10, 11, 12, 13, 14], [15, 16, 17, 18, 19, 20, 21, 22, 23], [24, 25, 26, 27, 28, 29, 30],
@@ -225,7 +235,7 @@
     '阿武隈高地': [4, 8], '四国山地': [36, 38, 39], '吉野川': [37, 38, 39], '野辺山原': [19], '利根川': [8, 11, 12] };
 
   var $ = function (id) { return document.getElementById(id); };
-  var startOverlay = $('startOverlay'), modeSel = $('modeSel'), diffSel = $('diffSel'), baseSel = $('baseSel'), orientSel = $('orientSel');
+  var startOverlay = $('startOverlay'), modeSel = $('modeSel'), diffSel = $('diffSel'), baseSel = $('baseSel'), orientSel = $('orientSel'), exagSel = $('exagSel');
   var countAllBtn = $('countAllBtn'), progressNoteEl = $('progressNote'), resetProgressBtn = $('resetProgressBtn');
   var feedbackEl = $('feedback'), scoreNEl = $('scoreN'), answeredNEl = $('answeredN'), avgNEl = $('avgN');
   var progressNEl = $('progressN'), progressFillEl = $('progressFill');
@@ -295,7 +305,7 @@
     cropRectKey = rect.join(',');
     cropMap = new maplibregl.Map({
       container: 'cropMap',
-      style: J3D.style(cropBase, { exaggeration: EXAG, cutRect: rect }),
+      style: J3D.style(cropBase, { exaggeration: exagFor(cfg), cutRect: rect, borders: 'hidden' }),
       center: [first[1], first[0]], zoom: 6, pitch: PITCH, bearing: 0,
       maxPitch: 80, attributionControl: { compact: true }
     });
@@ -373,16 +383,39 @@
     var key = rect.join(',');
     if (cropBase !== cfg.base) {
       cropBase = cfg.base; cropRectKey = key;
-      cropMap.setStyle(J3D.style(cropBase, { exaggeration: EXAG, cutRect: rect }));
+      cropMap.setStyle(J3D.style(cropBase, { exaggeration: exagFor(cfg), cutRect: rect, borders: 'hidden' }));
     } else if (key !== cropRectKey) {
       cropRectKey = key;
-      var dem = cropMap.getSource('dem'), mask = cropMap.getSource('cutmask');
-      if (dem && dem.setTiles && mask) { dem.setTiles(J3D.cutTiles(rect)); mask.setData(J3D.cutMask(rect)); }
-      else cropMap.setStyle(J3D.style(cropBase, { exaggeration: EXAG, cutRect: rect }));
+      var dem = cropMap.getSource('dem'), mask = cropMap.getSource('cutmask'), line = cropMap.getSource('cutline');
+      if (dem && dem.setTiles && mask && line) {
+        dem.setTiles(J3D.cutTiles(rect)); mask.setData(J3D.cutMask(rect)); line.setData(J3D.cutLine(rect));
+        cropMap.setPaintProperty('cutmask', 'fill-opacity', 1);
+        cropMap.setPaintProperty('cutline', 'line-opacity', 0);
+        if (cropMap.getLayer('pref-border')) { cropMap.setPaintProperty('pref-border', 'line-opacity', 0); cropMap.setPaintProperty('coast-line', 'line-opacity', 0); }
+      } else cropMap.setStyle(J3D.style(cropBase, { exaggeration: exagFor(cfg), cutRect: rect, borders: 'hidden' }));
     }
     var cam = cropMap.cameraForBounds([[rect[0], rect[1]], [rect[2], rect[3]]], { padding: 36, bearing: bearing, pitch: PITCH });
     cropMap.jumpTo({ center: cam ? cam.center : [(rect[0] + rect[2]) / 2, (rect[1] + rect[3]) / 2],
       zoom: (cam ? cam.zoom : 8) + 0.1, pitch: PITCH, bearing: bearing });
+  }
+
+  // answer reveal: pull the camera back and show all of Japan's terrain, dimmed, around the highlighted block
+  function revealAll() {
+    if (!cropMap) return;
+    var dem = cropMap.getSource('dem');
+    if (dem && dem.setTiles && cropMap.getLayer('cutmask')) {
+      dem.setTiles(J3D.fullTiles());
+      cropMap.setPaintProperty('cutmask', 'fill-opacity', 0.6);
+      cropMap.setPaintProperty('cutline', 'line-opacity', 1);
+      if (cropMap.getLayer('pref-border')) { cropMap.setPaintProperty('pref-border', 'line-opacity', 0.95); cropMap.setPaintProperty('coast-line', 'line-opacity', 0.9); }
+      cropRectKey = '';
+    }
+    // fit the main islands plus the answer block (so far-away islands like Okinawa stay in view)
+    var r = current.rect;
+    var bb = new maplibregl.LngLatBounds([128.4, 30.8], [146.0, 45.6]);
+    bb.extend([r[0], r[1]]); bb.extend([r[2], r[3]]);
+    var cam = cropMap.cameraForBounds(bb, { padding: 20, bearing: 0, pitch: 40 });
+    cropMap.easeTo({ center: cam ? cam.center : [137, 37], zoom: (cam ? cam.zoom : 5) + 0.2, pitch: 40, bearing: 0, duration: 2200 });
   }
 
   function placeName() { return current.pref + ' ' + current.label + '（' + current.typeJa + '）'; }
@@ -431,6 +464,7 @@
     });
     feedbackEl.className = 'feedback ' + (ok ? 'ok' : 'bad');
     feedbackEl.textContent = (ok ? '✅ 正解！' : '❌ 不正解…') + (hinted && ok ? '（ヒント使用 70点）' : '') + ' ' + placeName() + ' です。';
+    revealAll();
     skipBtn.disabled = true; hintBtn.disabled = true; nextBtn.disabled = false;
     updateStats();
   }
@@ -474,6 +508,7 @@
     feedbackEl.className = 'feedback ' + t.cls;
     feedbackEl.textContent = t.t + '（' + s + '点・約' + fmtKm(d) + 'ズレ' + (hinted ? '・ヒント使用' : '') + '） 正解は ' + placeName() + ' の周辺でした。';
     showAnswer({ lng: ll.lng, lat: ll.lat });
+    revealAll();
     skipBtn.disabled = true; hintBtn.disabled = true; nextBtn.disabled = false;
     updateStats();
   }
@@ -482,7 +517,7 @@
     if (locked || !current || hinted) return;
     hinted = true;
     cropBase = 'std';
-    cropMap.setStyle(J3D.style('std', { exaggeration: EXAG, cutRect: current.rect }));
+    cropMap.setStyle(J3D.style('std', { exaggeration: exagFor(cfg), cutRect: current.rect, borders: 'hidden' }));
     feedbackEl.className = 'feedback idle';
     feedbackEl.textContent = '地名つきの地図に切り替えました（この問題の得点は70%になります）。';
   });
@@ -494,6 +529,7 @@
     feedbackEl.textContent = '⏭️ スキップ： ' + placeName() + ' の周辺でした。';
     if (cfg.mode === 'map') showAnswer(null);
     else Array.prototype.forEach.call(choiceBtns.querySelectorAll('button'), function (b) { b.disabled = true; if (b.getAttribute('data-ok') === '1') b.classList.add('correct'); });
+    revealAll();
     skipBtn.disabled = true; hintBtn.disabled = true; nextBtn.disabled = false;
   });
 
@@ -523,7 +559,7 @@
     btn.addEventListener('click', function () {
       var raw = btn.getAttribute('data-count');
       startOverlay.classList.add('hidden');
-      var c = { mode: modeSel.value, diff: diffSel.value, base: baseSel.value, orient: orientSel.value };
+      var c = { mode: modeSel.value, diff: diffSel.value, base: baseSel.value, orient: orientSel.value, exag: exagSel.value };
       newGame(c, raw === 'all' ? 'all' : parseInt(raw, 10));
     });
   });

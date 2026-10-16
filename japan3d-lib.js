@@ -147,6 +147,23 @@
       // hide everything outside the rectangle (the terrain there is already flattened to 0 m)
       sources.cutmask = { type: 'geojson', data: cutMask(cutRect) };
       layers.push({ id: 'cutmask', type: 'fill', source: 'cutmask', paint: { 'fill-color': SEA_COLOR, 'fill-opacity': 1, 'fill-antialias': false } });
+      // outline of the block, only shown when the answer is revealed
+      sources.cutline = { type: 'geojson', data: cutLine(cutRect) };
+      layers.push({ id: 'cutline', type: 'line', source: 'cutline', paint: { 'line-color': '#fbbf24', 'line-width': 3, 'line-opacity': 0 } });
+    }
+    if (opts.borders) {
+      // coastline + prefecture borders (OpenStreetMap via OpenFreeMap). 'hidden' = present but invisible until revealed.
+      if (!sources.ofm) sources.ofm = { type: 'vector', url: 'https://tiles.openfreemap.org/planet',
+        attribution: '<a href="https://openfreemap.org" target="_blank" rel="noopener">OpenFreeMap</a> © OpenMapTiles Data from <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>' };
+      var bo = opts.borders === 'hidden' ? 0 : 0.9;
+      layers.push({ id: 'coast-line', type: 'line', source: 'ofm', 'source-layer': 'water', filter: ['==', 'class', 'ocean'],
+        paint: { 'line-color': '#f1f5f9', 'line-width': 1.3, 'line-opacity': bo } });
+      // only Japanese prefectures: inside a box around Japan and not inside the Korea / Asian-mainland outline
+      var box = { type: 'Polygon', coordinates: [[[122.5, 20], [154.5, 20], [154.5, 46], [122.5, 46], [122.5, 20]]] };
+      var mainland = { type: 'Polygon', coordinates: [FOREIGN_LAND] };
+      layers.push({ id: 'pref-border', type: 'line', source: 'ofm', 'source-layer': 'boundary',
+        filter: ['all', ['==', ['get', 'admin_level'], 4], ['!=', ['get', 'maritime'], 1], ['within', box], ['!', ['within', mainland]]],
+        paint: { 'line-color': '#fde68a', 'line-width': ['interpolate', ['linear'], ['zoom'], 4, 0.8, 8, 1.8], 'line-opacity': bo } });
     }
     var st = { version: 8, sources: sources, layers: layers };
     if (exag > 0) st.terrain = { source: 'dem', exaggeration: exag };
@@ -162,6 +179,15 @@
       [[rect[0], rect[1]], [rect[0], rect[3]], [rect[2], rect[3]], [rect[2], rect[1]], [rect[0], rect[1]]]
     ] } };
   }
+  function cutLine(rect) {
+    return { type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: [
+      [rect[0], rect[1]], [rect[2], rect[1]], [rect[2], rect[3]], [rect[0], rect[3]], [rect[0], rect[1]]] } };
+  }
+  // whole-Japan terrain (sea floor flattened), used when the answer is revealed
+  function fullTiles() {
+    return ['dem0://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'];
+  }
+
   // rectangle of widthKm x heightKm centred on (lat, lon), as [minLon, minLat, maxLon, maxLat]
   function rectAround(lat, lon, widthKm, heightKm) {
     var dLat = heightKm / 2 / 111.2, dLon = widthKm / 2 / (111.2 * Math.cos(lat * Math.PI / 180));
@@ -176,5 +202,5 @@
     return 2 * R * Math.asin(Math.sqrt(x));
   }
 
-  root.J3D = { BASES: BASES, style: style, haversineKm: haversineKm, SEA_COLOR: SEA_COLOR, cutTiles: cutTiles, cutMask: cutMask, rectAround: rectAround };
+  root.J3D = { BASES: BASES, style: style, haversineKm: haversineKm, SEA_COLOR: SEA_COLOR, cutTiles: cutTiles, cutMask: cutMask, cutLine: cutLine, fullTiles: fullTiles, rectAround: rectAround };
 })(window);
