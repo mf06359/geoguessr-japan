@@ -149,7 +149,7 @@
       dem: { type: 'raster-dem', tiles: cutRect ? cutTiles(cutRect, opts.cutCircle) : (removeSea ? ['dem0://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'] : DEM_TILES),
         tileSize: 256, maxzoom: 15, encoding: 'terrarium', attribution: DEM_ATTR }
     };
-    var bgColor = removeSea ? SEA_COLOR : (baseKey === 'shade' ? '#e9eef4' : '#cfd8e3');
+    var bgColor = baseKey === 'shade' ? '#e6ebf1' : (removeSea ? SEA_COLOR : '#cfd8e3');
     var layers = [{ id: 'bg', type: 'background', paint: { 'background-color': bgColor } }];
     if (b.tiles) {
       sources.base = { type: 'raster', tiles: cutRect ? baseTiles(baseKey, cutRect) : b.tiles, tileSize: 256, maxzoom: b.maxzoom, attribution: b.attr };
@@ -162,9 +162,9 @@
         id: 'hills', type: 'hillshade', source: 'dem',
         paint: {
           'hillshade-exaggeration': hills,
-          'hillshade-shadow-color': '#0f172a',
+          'hillshade-shadow-color': baseKey === 'shade' ? '#46526a' : '#0f172a',
           'hillshade-highlight-color': '#ffffff',
-          'hillshade-accent-color': '#475569'
+          'hillshade-accent-color': baseKey === 'shade' ? '#7d899c' : '#475569'
         }
       });
     }

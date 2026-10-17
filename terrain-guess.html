@@ -1,0 +1,548 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>地形だけのGeoGuessr</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/maplibre-gl@4.7.1/dist/maplibre-gl.css" integrity="sha256-V2sIX92Uh6ZaGSFTKMHghsB85b9toJtmazgG09AI2uk=" crossorigin="">
+<style>
+  :root {
+    --bg: #0f172a; --panel-bg: #131c31; --panel-bg-2: #1b2740;
+    --ink: #eef2fb; --sub-ink: #93a2c2; --accent: #a3e635; --good: #34d399; --bad: #f87171; --warn: #fbbf24;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0; background: var(--bg); color: var(--ink); min-height: 100%;
+    font-family: "Hiragino Sans", "Yu Gothic", "Noto Sans JP", -apple-system, BlinkMacSystemFont, sans-serif;
+  }
+  body { display: flex; flex-direction: column; min-height: 100vh; }
+  header { padding: 12px 16px 6px; text-align: center; }
+  header h1 { margin: 0 0 3px; font-size: 1.35rem; }
+  header p { margin: 0; color: var(--sub-ink); font-size: .82rem; }
+  nav.crosslink { margin-top: 8px; display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
+  nav.crosslink a { color: var(--accent); text-decoration: none; font-size: .78rem; border: 1px solid #3a4d12; padding: 4px 10px; border-radius: 999px; }
+  nav.crosslink a:hover { background: rgba(163,230,53,.12); }
+
+  main { flex: 1; width: 100%; max-width: 1280px; margin: 0 auto; padding: 8px 14px 16px; display: grid; grid-template-columns: 1.5fr 1fr 300px; gap: 12px; align-items: start; }
+  .card { background: var(--panel-bg); border-radius: 16px; padding: 12px; box-shadow: 0 4px 24px rgba(0,0,0,.25); }
+  .card h2 { margin: 0 0 8px; font-size: .9rem; display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+  .card h2 small { font-weight: 400; color: var(--sub-ink); font-size: .7rem; }
+  .mapbox { position: relative; height: 480px; border-radius: 10px; overflow: hidden; background: #cfd8e3; }
+  .mapbox > div.m { position: absolute; inset: 0; }
+  /* the first-person view: sky above the horizon */
+  #fpv { background: linear-gradient(#7fb3dc 0%, #b8d6ec 38%, #d6e6f2 52%); cursor: ew-resize; touch-action: none; }
+  .hud { position: absolute; z-index: 3; pointer-events: none; }
+  .compass { right: 10px; top: 10px; background: rgba(15,23,42,.78); border-radius: 10px; padding: 6px 12px; font-size: .85rem; font-variant-numeric: tabular-nums; }
+  .compass b { color: var(--accent); }
+  .crosshair { left: 50%; bottom: 14px; transform: translateX(-50%); background: rgba(15,23,42,.72); border-radius: 999px; padding: 3px 12px; font-size: .72rem; color: var(--ink); }
+  .turn { position: absolute; z-index: 4; top: 50%; transform: translateY(-50%); width: 40px; height: 64px; padding: 0; font-size: 1.3rem; flex: none; background: rgba(15,23,42,.6); }
+  .turn.l { left: 8px; } .turn.r { right: 8px; }
+  .cover { position: absolute; inset: 0; z-index: 5; background: #0f172a; display: none; align-items: center; justify-content: center; color: var(--sub-ink); font-size: .9rem; pointer-events: none; }
+  .cover.on { display: flex; }
+  .maplibregl-ctrl-attrib { font-size: 10px; }
+
+  aside { display: flex; flex-direction: column; gap: 12px; }
+  .feedback { min-height: 64px; font-size: .88rem; line-height: 1.5; border-radius: 10px; padding: 10px 12px; }
+  .feedback.ok { background: rgba(52,211,153,.15); color: var(--good); }
+  .feedback.mid { background: rgba(251,191,36,.15); color: var(--warn); }
+  .feedback.bad { background: rgba(248,113,113,.15); color: var(--bad); }
+  .feedback.skip { background: rgba(56,189,248,.15); color: #38bdf8; }
+  .feedback.idle { color: var(--sub-ink); }
+  .stats { display: flex; justify-content: space-between; gap: 8px; }
+  .stat { flex: 1; text-align: center; }
+  .stat .n { font-size: 1.3rem; font-weight: 700; }
+  .stat .l { font-size: .72rem; color: var(--sub-ink); }
+  .progress-bar { height: 6px; border-radius: 4px; background: #263250; overflow: hidden; margin-top: 10px; }
+  .progress-bar > div { height: 100%; background: var(--accent); width: 0%; transition: width .25s; }
+  .controls { display: flex; gap: 10px; }
+  .controls + .controls { margin-top: 10px; }
+  button { flex: 1; font: inherit; font-size: .85rem; padding: 10px 8px; border-radius: 10px; border: 1px solid #2a3a5c; background: var(--panel-bg-2); color: var(--ink); cursor: pointer; transition: background .15s, transform .1s; }
+  button:hover:not(:disabled) { background: #253253; }
+  button:active:not(:disabled) { transform: scale(.97); }
+  button.primary { background: var(--accent); color: #1a2e05; border-color: var(--accent); font-weight: 700; }
+  button.primary:hover:not(:disabled) { background: #bef264; }
+  button:disabled { opacity: .4; cursor: not-allowed; }
+  .summary { text-align: center; }
+  .summary .big { font-size: 2.2rem; font-weight: 700; color: var(--accent); margin: 6px 0; }
+  .summary .msg { color: var(--sub-ink); font-size: .85rem; margin-bottom: 12px; }
+  .choice-btns { display: grid; grid-template-columns: 1fr; gap: 10px; }
+  .choice-btns button { padding: 18px 10px; font-size: 1.05rem; }
+  .choice-btns button.correct { background: rgba(52,211,153,.2); border-color: var(--good); color: var(--good); font-weight: 700; }
+  .choice-btns button.wrong { background: rgba(248,113,113,.2); border-color: var(--bad); color: var(--bad); }
+  footer { text-align: center; padding: 10px; font-size: .7rem; color: var(--sub-ink); }
+  footer a { color: var(--sub-ink); }
+
+  @media (max-width: 1000px) { main { grid-template-columns: 1fr; } .mapbox { height: 380px; } }
+
+  .start-overlay { position: fixed; inset: 0; z-index: 2000; background: rgba(15,23,42,.9); display: flex; align-items: center; justify-content: center; padding: 20px; overflow: auto; }
+  .start-overlay.hidden { display: none; }
+  .start-card { background: var(--panel-bg); border-radius: 20px; padding: 28px 26px; max-width: 440px; width: 100%; text-align: center; box-shadow: 0 12px 48px rgba(0,0,0,.5); }
+  .start-card h2 { margin: 0 0 8px; font-size: 1.25rem; }
+  .start-card > p { margin: 0 0 14px; color: var(--sub-ink); font-size: .84rem; line-height: 1.5; }
+  .start-card label { display: block; text-align: left; font-size: .76rem; color: var(--sub-ink); margin: 10px 0 5px; }
+  .start-card select { width: 100%; font: inherit; font-size: .95rem; padding: 9px 10px; border-radius: 10px; border: 1px solid #2a3a5c; background: var(--panel-bg-2); color: var(--ink); }
+  .count-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 16px; }
+  .count-grid button { padding: 15px 8px; font-size: 1rem; }
+  .progress-note { margin: 12px 0 0; font-size: .72rem; color: var(--sub-ink); line-height: 1.5; min-height: 1.5em; }
+  .back-link { display: inline-block; margin-top: 8px; font-size: .78rem; color: var(--sub-ink); flex: none; text-decoration: underline; cursor: pointer; background: none; border: none; padding: 0; }
+  .back-link:hover:not(:disabled) { background: none; }
+</style>
+</head>
+<body>
+
+<div class="start-overlay" id="startOverlay">
+  <div class="start-card">
+    <h2>🧍 地形だけのGeoGuessr</h2>
+    <p>立体の日本地図の陸地に人を落とします。その人の目の高さの視点で、360度見回して、地形の形だけから「ここはどこ？」を当てよう。</p>
+    <label for="modeSel">解答の方法</label>
+    <select id="modeSel">
+      <option value="map">地図をクリックして場所を当てる</option>
+      <option value="choice">4択: どの都道府県？</option>
+    </select>
+    <label for="baseSel">地面の表示</label>
+    <select id="baseSel">
+      <option value="shade">陰影のみ（白黒・地形だけ）</option>
+      <option value="relief">色別標高図（標高で色分け・やさしい）</option>
+    </select>
+    <label for="exagSel">標高の強調</label>
+    <select id="exagSel">
+      <option value="1">実寸（1倍）</option>
+      <option value="1.5" selected>少し強調（1.5倍）</option>
+      <option value="2.5">強め（2.5倍）</option>
+    </select>
+    <div class="count-grid">
+      <button type="button" data-count="1">1問</button>
+      <button type="button" data-count="5">5問</button>
+      <button type="button" data-count="10">10問</button>
+      <button type="button" data-count="all" class="primary" id="countAllBtn">全部</button>
+    </div>
+    <p class="progress-note" id="progressNote">&nbsp;</p>
+    <button type="button" class="back-link" id="resetProgressBtn">🔄 このモードの正解記録をリセット</button>
+  </div>
+</div>
+
+<header>
+  <h1>🧍 地形だけのGeoGuessr</h1>
+  <p>左: 落とされた場所からの景色。ドラッグ・矢印キー・ボタンで360度見回せます（地名・道路・建物は一切ありません）。</p>
+  <nav class="crosslink">
+    <a href="index.html">🏠 トップへ</a>
+    <a href="japan-crop-quiz.html">🧩 3D地図 切り抜きクイズ</a>
+    <a href="japan-3d.html">🗻 立体日本地図</a>
+  </nav>
+</header>
+
+<main>
+  <section class="card">
+    <h2>ここはどこ？（見回し） <small id="viewInfo">ドラッグで見回す</small></h2>
+    <div class="mapbox">
+      <div class="m" id="fpv"></div>
+      <div class="cover" id="cover"><span>読み込み中…</span></div>
+      <div class="hud compass" id="compass">方位 <b id="hdg">北 0°</b></div>
+      <div class="hud crosshair" id="eyeInfo">目の高さ: 地面から約3m</div>
+      <button class="turn l" id="turnL" aria-label="左へ回る">◀</button>
+      <button class="turn r" id="turnR" aria-label="右へ回る">▶</button>
+    </div>
+  </section>
+
+  <section class="card" id="guessCard">
+    <h2>日本地図 <small>クリックで解答</small></h2>
+    <div class="mapbox"><div class="m" id="guessMap"></div></div>
+  </section>
+
+  <section class="card" id="choiceCard" style="display:none;">
+    <h2>どの都道府県？ <small>4択</small></h2>
+    <div class="choice-btns" id="choiceBtns"></div>
+  </section>
+
+  <aside>
+    <div class="card">
+      <div class="feedback idle" id="feedback">地形をよく見て解答してね</div>
+      <div class="progress-bar"><div id="progressFill"></div></div>
+    </div>
+    <div class="card">
+      <div class="stats">
+        <div class="stat"><div class="n" id="scoreN">0</div><div class="l">合計点</div></div>
+        <div class="stat"><div class="n" id="answeredN">0</div><div class="l">解答数</div></div>
+        <div class="stat"><div class="n" id="avgN">-</div><div class="l">平均点</div></div>
+        <div class="stat"><div class="n" id="progressN">0/0</div><div class="l">進行</div></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="controls">
+        <button id="hintBtn">💡 ヒント: 色を付ける（−30%）</button>
+        <button id="skipBtn">スキップ</button>
+      </div>
+      <div class="controls">
+        <button id="nextBtn" class="primary" disabled>次へ</button>
+      </div>
+      <div class="controls">
+        <button id="endBtn">終了して結果を見る</button>
+        <button id="restartBtn">最初から</button>
+      </div>
+    </div>
+    <div class="card summary" id="summaryCard" style="display:none;">
+      <div>結果</div>
+      <div class="big" id="summaryScore">0点</div>
+      <div class="msg" id="summaryMsg"></div>
+      <button id="playAgainBtn" class="primary">もう一度プレイ</button>
+    </div>
+  </aside>
+</main>
+
+<footer>
+  地図: <a href="https://maps.gsi.go.jp/development/ichiran.html" target="_blank" rel="noopener">国土地理院 地理院タイル</a> ／
+  標高: <a href="https://registry.opendata.aws/terrain-tiles/" target="_blank" rel="noopener">Terrain Tiles (AWS Open Data)</a> ／
+  海域: <a href="https://openfreemap.org" target="_blank" rel="noopener">OpenFreeMap</a>（© OpenMapTiles / © OpenStreetMap contributors） ／
+  落とす地点: <a href="https://github.com/geolonia/japanese-addresses" target="_blank" rel="noopener">geolonia/japanese-addresses</a>（国土交通省 位置参照情報）の町名と、山地・火山などの地形の周辺から標高データで陸地を確認して選定 ／
+  描画: <a href="https://maplibre.org/" target="_blank" rel="noopener">MapLibre GL JS</a>
+</footer>
+
+<script src="https://cdn.jsdelivr.net/npm/maplibre-gl@4.7.1/dist/maplibre-gl.js" integrity="sha256-vpYzxNhw4m+zfxz+XFp3GBZnEUAD6hYgeseFDY2ordE=" crossorigin=""></script>
+<script src="japan3d-lib.js?v=20261017a"></script>
+<script src="drop-points.js?v=20261017b"></script>
+<script>
+(function () {
+  var PREF = ['北海道','青森県','岩手県','宮城県','秋田県','山形県','福島県','茨城県','栃木県','群馬県','埼玉県','千葉県','東京都','神奈川県',
+    '新潟県','富山県','石川県','福井県','山梨県','長野県','岐阜県','静岡県','愛知県','三重県','滋賀県','京都府','大阪府','兵庫県','奈良県',
+    '和歌山県','鳥取県','島根県','岡山県','広島県','山口県','徳島県','香川県','愛媛県','高知県','福岡県','佐賀県','長崎県','熊本県','大分県',
+    '宮崎県','鹿児島県','沖縄県'];
+  var REGION = [[1], [2, 3, 4, 5, 6, 7], [8, 9, 10, 11, 12, 13, 14], [15, 16, 17, 18, 19, 20, 21, 22, 23], [24, 25, 26, 27, 28, 29, 30],
+    [31, 32, 33, 34, 35], [36, 37, 38, 39], [40, 41, 42, 43, 44, 45, 46, 47]];
+  var POINTS = window.DROP_POINTS || [];
+  var EYE_H = 3;            // metres above the ground: as low as possible while staying above the map
+  var VIEW_PITCH = 85;      // looking almost horizontally (MapLibre's maximum pitch)
+  var SCALE_KM = 150, THRESHOLD = 70;
+  var DIRS = ['北', '北東', '東', '南東', '南', '南西', '西', '北西'];
+
+  var $ = function (id) { return document.getElementById(id); };
+  var startOverlay = $('startOverlay'), modeSel = $('modeSel'), baseSel = $('baseSel'), exagSel = $('exagSel');
+  var countAllBtn = $('countAllBtn'), progressNoteEl = $('progressNote'), resetProgressBtn = $('resetProgressBtn');
+  var feedbackEl = $('feedback'), scoreNEl = $('scoreN'), answeredNEl = $('answeredN'), avgNEl = $('avgN');
+  var progressNEl = $('progressN'), progressFillEl = $('progressFill');
+  var hintBtn = $('hintBtn'), skipBtn = $('skipBtn'), nextBtn = $('nextBtn'), endBtn = $('endBtn'), restartBtn = $('restartBtn');
+  var summaryCard = $('summaryCard'), summaryScoreEl = $('summaryScore'), summaryMsgEl = $('summaryMsg'), playAgainBtn = $('playAgainBtn');
+  var guessCard = $('guessCard'), choiceCard = $('choiceCard'), choiceBtns = $('choiceBtns'), cover = $('cover');
+  var hdgEl = $('hdg'), eyeInfo = $('eyeInfo'), viewInfo = $('viewInfo');
+
+  var cfg = null, fpv = null, guessMap = null, guessReady = false;
+  var queue = [], idx = 0, totalScore = 0, answered = 0, locked = true, current = null, hinted = false;
+  var lastCfg = null, lastCount = null, markers = [];
+  var bearing = 0, revealed = false, navCtl = null, coverToken = 0, baseNow = 'shade';
+
+  // ---- correct tracking: excluded until the pool is cleared or reset ----
+  var PROGRESS_KEY = 'terrainguess-correct-v1';
+  var CORRECT = loadProgress();
+  function loadProgress() { try { var r = window.localStorage.getItem(PROGRESS_KEY); return r ? JSON.parse(r) : {}; } catch (e) { return {}; } }
+  function saveProgress() { try { window.localStorage.setItem(PROGRESS_KEY, JSON.stringify(CORRECT)); } catch (e) {} }
+  function keyOf(mode, i) { return mode + '|' + i; }
+  function allIdx() { return POINTS.map(function (_, i) { return i; }); }
+  function refreshStart() {
+    var done = allIdx().filter(function (i) { return CORRECT[keyOf(modeSel.value, i)]; }).length;
+    countAllBtn.textContent = '全' + POINTS.length + '問';
+    progressNoteEl.textContent = done > 0
+      ? ('✅ 高得点済み ' + done + '/' + POINTS.length + '問は、出し切るかリセットするまで出題されません')
+      : ' ';
+  }
+  modeSel.addEventListener('change', refreshStart);
+  resetProgressBtn.addEventListener('click', function () {
+    allIdx().forEach(function (i) { delete CORRECT[keyOf(modeSel.value, i)]; });
+    saveProgress(); refreshStart();
+  });
+
+  function shuffle(arr) {
+    var a = arr.slice();
+    for (var i = a.length - 1; i > 0; i--) { var j = Math.floor(Math.random() * (i + 1)); var t = a[i]; a[i] = a[j]; a[j] = t; }
+    return a;
+  }
+
+  // ---------------- guess map (flat, with place names) ----------------
+  function setupGuessMap() {
+    guessMap = new maplibregl.Map({
+      container: 'guessMap',
+      style: J3D.style('pale', { exaggeration: 0, hillsOn: false }),
+      center: [137.6, 37.6], zoom: 4.3, minZoom: 3, maxZoom: 10,
+      attributionControl: { compact: true }
+    });
+    guessMap.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
+    guessMap.on('load', function () {
+      guessMap.addSource('ans', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+      guessMap.addLayer({ id: 'ans-line', type: 'line', source: 'ans', paint: { 'line-color': '#fbbf24', 'line-width': 3, 'line-dasharray': [2, 1.5] } });
+      guessReady = true;
+    });
+    guessMap.on('click', function (e) { handleGuess(e.lngLat); });
+  }
+
+  // ---------------- first-person view ----------------
+  function exagNow() { return parseFloat(cfg.exag); }
+  function styleFor(base) { return J3D.style(base, { exaggeration: exagNow(), sea: 'flat' }); }
+
+  function buildView(first) {
+    if (fpv) { fpv.remove(); fpv = null; }
+    baseNow = cfg.base; navCtl = null; revealed = false;
+    fpv = new maplibregl.Map({
+      container: 'fpv',
+      style: styleFor(baseNow),
+      center: [first[1], first[0]], zoom: 12, pitch: VIEW_PITCH, bearing: 0,
+      maxPitch: 85, attributionControl: { compact: true }, fadeDuration: 0
+    });
+    ['dragPan', 'dragRotate', 'scrollZoom', 'boxZoom', 'doubleClickZoom', 'touchZoomRotate', 'touchPitch', 'keyboard'].forEach(function (h) {
+      if (fpv[h]) fpv[h].disable();
+    });
+    // our own controls: horizontal drag = turn on the spot
+    var el = $('fpv'), drag = null;
+    el.onpointerdown = function (e) { if (revealed) return; drag = { x: e.clientX, b: bearing }; try { el.setPointerCapture(e.pointerId); } catch (x) {} };
+    el.onpointermove = function (e) { if (!drag || revealed) return; setBearing(drag.b - (e.clientX - drag.x) * 0.3); };
+    el.onpointerup = el.onpointercancel = function () { drag = null; };
+    // the eye sits at the dropped position, a few metres above the ground
+    fpv.on('sourcedata', function (e) { if (!revealed && current && e.sourceId === 'dem' && e.isSourceLoaded) applyView(); });
+  }
+
+  function groundAlt() {
+    var e = null;
+    try { e = fpv.queryTerrainElevation([current.lon, current.lat]); } catch (x) {}
+    if (e == null || isNaN(e)) e = current.elev * exagNow();
+    return Math.max(e, 0);
+  }
+
+  function applyView() {
+    if (!fpv || !current) return;
+    var alt = groundAlt() + EYE_H;
+    var rad = bearing * Math.PI / 180, D = 3000;   // look at a point 3 km away, 5 degrees lower than the eye
+    var toLat = current.lat + D * Math.cos(rad) / 110570;
+    var toLon = current.lon + D * Math.sin(rad) / (111320 * Math.cos(current.lat * Math.PI / 180));
+    var toAlt = alt - D * Math.tan(5 * Math.PI / 180);
+    var o = fpv.calculateCameraOptionsFromTo([current.lon, current.lat], alt, [toLon, toLat], toAlt);
+    fpv.jumpTo(o);
+  }
+
+  function setBearing(b) {
+    bearing = ((b % 360) + 360) % 360;
+    hdgEl.textContent = DIRS[Math.round(bearing / 45) % 8] + ' ' + Math.round(bearing) + '°';
+    applyView();
+  }
+
+  $('turnL').addEventListener('click', function () { if (!revealed) setBearing(bearing - 20); });
+  $('turnR').addEventListener('click', function () { if (!revealed) setBearing(bearing + 20); });
+  document.addEventListener('keydown', function (e) {
+    if (revealed || startOverlay.className.indexOf('hidden') === -1) return;
+    if (e.key === 'ArrowLeft') { setBearing(bearing - 10); e.preventDefault(); }
+    if (e.key === 'ArrowRight') { setBearing(bearing + 10); e.preventDefault(); }
+  });
+
+  function setExplore(on) {
+    if (!fpv) return;
+    ['dragPan', 'scrollZoom', 'doubleClickZoom', 'touchZoomRotate', 'dragRotate'].forEach(function (h) {
+      if (fpv[h]) { if (on) fpv[h].enable(); else fpv[h].disable(); }
+    });
+    if (on && !navCtl) { navCtl = new maplibregl.NavigationControl({ visualizePitch: true }); fpv.addControl(navCtl, 'top-right'); }
+    if (!on && navCtl) { fpv.removeControl(navCtl); navCtl = null; }
+    $('fpv').style.cursor = on ? 'grab' : 'ew-resize';
+    $('compass').style.display = on ? 'none' : '';
+    $('eyeInfo').style.display = on ? 'none' : '';
+    viewInfo.textContent = on ? 'ホイールで拡大・ドラッグで移動' : 'ドラッグで見回す';
+  }
+
+  function coverUntilReady() {
+    var tok = ++coverToken, t0 = performance.now(), tries = 0;
+    cover.classList.add('on');
+    var iv = setInterval(function () {
+      tries++;
+      if (tok !== coverToken) { clearInterval(iv); return; }
+      if ((fpv && fpv.loaded() && performance.now() - t0 > 600) || tries > 200) {
+        clearInterval(iv); applyView(); cover.classList.remove('on');
+      }
+    }, 120);
+  }
+
+  // ---------------- game flow ----------------
+  function updateStats() {
+    scoreNEl.textContent = totalScore;
+    answeredNEl.textContent = answered;
+    avgNEl.textContent = answered ? Math.round(totalScore / answered) : '-';
+    progressNEl.textContent = idx + '/' + queue.length;
+    progressFillEl.style.width = (queue.length ? idx / queue.length * 100 : 0) + '%';
+  }
+  function clearAnswerLayer() {
+    markers.forEach(function (m) { m.remove(); }); markers = [];
+    if (guessReady) guessMap.getSource('ans').setData({ type: 'FeatureCollection', features: [] });
+  }
+
+  function newGame(c, count) {
+    cfg = c; lastCfg = c; lastCount = count;
+    var all = allIdx();
+    var remaining = all.filter(function (i) { return !CORRECT[keyOf(c.mode, i)]; });
+    if (remaining.length === 0) {
+      all.forEach(function (i) { delete CORRECT[keyOf(c.mode, i)]; });
+      saveProgress(); remaining = all;
+    }
+    var sh = shuffle(remaining);
+    queue = count === 'all' ? sh : sh.slice(0, Math.min(count, sh.length));
+    idx = 0; totalScore = 0; answered = 0; current = null;
+    summaryCard.style.display = 'none';
+    skipBtn.disabled = false; endBtn.disabled = false; nextBtn.disabled = true; hintBtn.disabled = false;
+    var isMap = c.mode === 'map';
+    guessCard.style.display = isMap ? '' : 'none';
+    choiceCard.style.display = isMap ? 'none' : '';
+    buildView(POINTS[queue[0]]);
+    clearAnswerLayer();
+    if (isMap) { guessMap.resize(); guessMap.jumpTo({ center: [137.6, 37.6], zoom: window.innerWidth < 1000 ? 3.6 : 4.3 }); }
+    nextQuestion();
+  }
+
+  function nextQuestion() {
+    clearAnswerLayer();
+    if (idx >= queue.length) { showSummary(); return; }
+    var i = queue[idx]; idx++;
+    var p = POINTS[i];
+    current = { i: i, lat: p[0], lon: p[1], prefNo: parseInt(p[2], 10), pref: PREF[parseInt(p[2], 10) - 1], label: p[3], elev: p[4] };
+    hinted = false; revealed = false;
+    setExplore(false);
+    if (baseNow !== cfg.base) { baseNow = cfg.base; fpv.setStyle(styleFor(baseNow)); }
+    bearing = Math.round(Math.random() * 360);
+    hdgEl.textContent = DIRS[Math.round(bearing / 45) % 8] + ' ' + bearing + '°';
+    coverUntilReady();
+    applyView();
+    feedbackEl.className = 'feedback idle';
+    feedbackEl.textContent = cfg.mode === 'map' ? '見回して、右の地図をクリックして解答してね' : '見回して、4択から選んで解答してね';
+    nextBtn.disabled = true; skipBtn.disabled = false; hintBtn.disabled = false;
+    if (cfg.mode === 'map') guessMap.jumpTo({ center: [137.6, 37.6], zoom: window.innerWidth < 1000 ? 3.6 : 4.3 });
+    else buildChoices();
+    updateStats();
+    locked = false;
+  }
+
+  function revealView() {
+    if (!fpv) return;
+    revealed = true;
+    setExplore(true);
+    var m = new maplibregl.Marker({ color: '#ef4444' }).setLngLat([current.lon, current.lat]).addTo(fpv);
+    markers.push(m);
+    fpv.easeTo({ center: [current.lon, current.lat], zoom: 9.2, pitch: 55, bearing: bearing, duration: 3000, essential: true });
+  }
+
+  function placeText() { return current.label + '（標高 約' + current.elev + 'm）'; }
+  function tier(s) {
+    if (s >= 85) return { cls: 'ok', t: '🎯 ほぼ正解！' };
+    if (s >= 60) return { cls: 'ok', t: '😄 とても近い！' };
+    if (s >= 30) return { cls: 'mid', t: '🙂 まずまず' };
+    if (s >= 10) return { cls: 'mid', t: '😅 惜しい…' };
+    return { cls: 'bad', t: '😵 大きく外れました' };
+  }
+  function fmtKm(d) { return d >= 10 ? Math.round(d) + 'km' : d.toFixed(1) + 'km'; }
+
+  function handleGuess(ll) {
+    if (locked || !current || !guessReady || cfg.mode !== 'map') return;
+    locked = true; answered++;
+    var d = J3D.haversineKm([current.lat, current.lon], [ll.lat, ll.lng]);
+    var raw = Math.round(100 * Math.exp(-d / SCALE_KM));
+    var s = hinted ? Math.round(raw * 0.7) : raw;
+    totalScore += s;
+    if (s >= THRESHOLD && !hinted) { CORRECT[keyOf(cfg.mode, current.i)] = true; saveProgress(); }
+    var t = tier(s);
+    feedbackEl.className = 'feedback ' + t.cls;
+    feedbackEl.textContent = t.t + '（' + s + '点・約' + fmtKm(d) + 'ズレ' + (hinted ? '・ヒント使用' : '') + '） 正解は ' + placeText() + ' でした。';
+    var actual = [current.lon, current.lat];
+    guessMap.getSource('ans').setData({ type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: [[ll.lng, ll.lat], actual] } });
+    markers.push(new maplibregl.Marker({ color: '#ef4444' }).setLngLat(actual).addTo(guessMap));
+    markers.push(new maplibregl.Marker({ color: '#38bdf8' }).setLngLat([ll.lng, ll.lat]).addTo(guessMap));
+    guessMap.fitBounds(new maplibregl.LngLatBounds(actual, actual).extend([ll.lng, ll.lat]), { padding: 60, maxZoom: 8, duration: 900 });
+    revealView();
+    skipBtn.disabled = true; hintBtn.disabled = true; nextBtn.disabled = false;
+    updateStats();
+  }
+
+  function buildChoices() {
+    var okNo = current.prefNo;
+    var region = REGION.filter(function (r) { return r.indexOf(okNo) !== -1; })[0] || [];
+    var pick = [okNo];
+    shuffle(region.filter(function (n) { return n !== okNo; })).forEach(function (n) { if (pick.length < 4) pick.push(n); });
+    shuffle(PREF.map(function (_, k) { return k + 1; })).forEach(function (n) { if (pick.length < 4 && pick.indexOf(n) === -1) pick.push(n); });
+    choiceBtns.innerHTML = '';
+    shuffle(pick).forEach(function (n) {
+      var b = document.createElement('button');
+      b.type = 'button'; b.textContent = PREF[n - 1]; b.setAttribute('data-ok', n === okNo ? '1' : '0');
+      b.addEventListener('click', function () { handleChoice(b); });
+      choiceBtns.appendChild(b);
+    });
+  }
+
+  function handleChoice(btn) {
+    if (locked || !current || cfg.mode !== 'choice') return;
+    locked = true; answered++;
+    var ok = btn.getAttribute('data-ok') === '1';
+    var s = ok ? (hinted ? 70 : 100) : 0;
+    totalScore += s;
+    if (s >= THRESHOLD && !hinted) { CORRECT[keyOf(cfg.mode, current.i)] = true; saveProgress(); }
+    Array.prototype.forEach.call(choiceBtns.querySelectorAll('button'), function (b) {
+      b.disabled = true;
+      if (b.getAttribute('data-ok') === '1') b.classList.add('correct'); else if (b === btn) b.classList.add('wrong');
+    });
+    feedbackEl.className = 'feedback ' + (ok ? 'ok' : 'bad');
+    feedbackEl.textContent = (ok ? '✅ 正解！' : '❌ 不正解…') + (hinted && ok ? '（ヒント使用 70点）' : '') + ' ' + placeText() + ' でした。';
+    revealView();
+    skipBtn.disabled = true; hintBtn.disabled = true; nextBtn.disabled = false;
+    updateStats();
+  }
+
+  hintBtn.addEventListener('click', function () {
+    if (locked || !current || hinted) return;
+    hinted = true;
+    baseNow = 'relief';
+    fpv.setStyle(styleFor('relief'));
+    feedbackEl.className = 'feedback idle';
+    feedbackEl.textContent = '標高で色分けした地面に切り替えました（この問題の得点は70%になります）。';
+  });
+
+  skipBtn.addEventListener('click', function () {
+    if (locked || !current) return;
+    locked = true;
+    feedbackEl.className = 'feedback skip';
+    feedbackEl.textContent = '⏭️ スキップ： ' + placeText() + ' でした。';
+    if (cfg.mode === 'map') {
+      var actual = [current.lon, current.lat];
+      markers.push(new maplibregl.Marker({ color: '#ef4444' }).setLngLat(actual).addTo(guessMap));
+      guessMap.flyTo({ center: actual, zoom: 6.5, duration: 900 });
+    } else {
+      Array.prototype.forEach.call(choiceBtns.querySelectorAll('button'), function (b) { b.disabled = true; if (b.getAttribute('data-ok') === '1') b.classList.add('correct'); });
+    }
+    revealView();
+    skipBtn.disabled = true; hintBtn.disabled = true; nextBtn.disabled = false;
+  });
+
+  nextBtn.addEventListener('click', function () { if (locked && current) nextQuestion(); });
+
+  function showSummary() {
+    current = null; locked = true; updateStats();
+    summaryCard.style.display = 'block';
+    var avg = answered ? Math.round(totalScore / answered) : 0;
+    summaryScoreEl.textContent = totalScore + '点';
+    var msg;
+    if (answered === 0) msg = 'まだ解答していません。';
+    else if (avg >= 80) msg = '完璧！地形だけで日本のどこか分かる達人です！';
+    else if (avg >= 50) msg = 'お見事！かなり地形が読めています。';
+    else if (avg >= 25) msg = 'まずまず！立体日本地図で地形を眺めて復習しよう。';
+    else msg = 'まだまだ伸びしろあり！山の並びや平野の広がりを手がかりにしてみよう。';
+    summaryMsgEl.textContent = msg + '（平均 ' + avg + '点 / ' + answered + '問中）';
+    skipBtn.disabled = true; hintBtn.disabled = true; nextBtn.disabled = true; endBtn.disabled = true;
+  }
+
+  endBtn.addEventListener('click', function () { if (queue.length) { clearAnswerLayer(); showSummary(); } });
+  function openStart() { startOverlay.classList.remove('hidden'); refreshStart(); }
+  restartBtn.addEventListener('click', openStart);
+  playAgainBtn.addEventListener('click', function () { if (lastCfg) newGame(lastCfg, lastCount); else openStart(); });
+
+  Array.prototype.forEach.call(startOverlay.querySelectorAll('button[data-count]'), function (btn) {
+    btn.addEventListener('click', function () {
+      var raw = btn.getAttribute('data-count');
+      startOverlay.classList.add('hidden');
+      newGame({ mode: modeSel.value, base: baseSel.value, exag: exagSel.value }, raw === 'all' ? 'all' : parseInt(raw, 10));
+    });
+  });
+
+  setupGuessMap();
+  refreshStart();
+})();
+</script>
+
+</body>
+</html>
